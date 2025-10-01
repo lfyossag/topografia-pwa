@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1f3a8a">
+  <title>Informe Diario de Topografía</title>
+  <style>
+    :root{
+      --bg:#f7f8fb; --fg:#0f172a; --muted:#475569; --pri:#1f3a8a; --ok:#0d9488; --err:#b91c1c;
+      --card:#ffffff; --bd:#e2e8f0; --bd2:#cbd5e1; --soft:#f1f5f9; --shadow:0 8px 28px rgba(2,6,23,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial; background:var(--bg); color:var(--fg)}
+    body.modal-open{overflow:hidden}
+    .wrap{max-width:960px;margin:0 auto;padding:16px}
+    @media (min-width:1024px){.wrap{padding:24px}}
+
+    .card{background:var(--card); border:1px solid var(--bd); border-radius:16px; box-shadow:var(--shadow)}
+    .p-xl{padding:18px}
+
+    .hdr{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+    h1{font-size:20px;margin:0}
+
+    .toolbar{display:flex; gap:10px; flex-wrap:wrap}
+    .toolbar.right{margin-left:auto}
+    button{appearance:none; border:1px solid var(--bd2); background:#fff; color:#0f172a; padding:10px 14px; border-radius:10px; cursor:pointer}
+    .btn{background:var(--pri); color:#fff; border-color:transparent}
+    .btn-err{background:var(--err); color:#fff; border-color:transparent}
+    .btn-ghost{background:#fff}
+
+    .row{display:grid; gap:10px}
+    .row.cols-2{grid-template-columns:repeat(2, minmax(0,1fr))}
+    @media (max-width:720px){ .row.cols-2{grid-template-columns:1fr} }
+
+    label{font-size:12px;color:var(--muted)}
+    input, select{width:100%; padding:10px 12px; border:1px solid var(--bd2); border-radius:10px; background:#fff; outline:none; font-size:14px}
+    input.invalid, select.invalid{border-color:var(--err)}
+
+    .sep{height:1px; background:var(--bd); margin:12px 0}
+
+    .table-wrap{overflow:auto; border:1px solid var(--bd); border-radius:14px}
+    table{width:100%; border-collapse:separate; border-spacing:0}
+    th, td{border-bottom:1px solid var(--bd); padding:8px 10px; text-align:left; vertical-align:top; font-size:14px}
+    th{position:sticky; top:0; background:var(--soft); z-index:1; font-size:12px; color:var(--muted); border-bottom:1px solid var(--bd2)}
+    .num{width:56px}
+    .fit{width:1%; white-space:nowrap}
+    .actions-row{display:flex; gap:8px}
+
+    .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:14px; background:#111827; color:#fff; padding:10px 12px; border-radius:8px; box-shadow:var(--shadow); display:none}
+    .danger{background:#b91c1c}
+    .ok{background:#0d9488}
+
+    .status{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--bd2); background:var(--soft)}
+
+    /* ===== Modal ===== */
+    .modal-backdrop{position:fixed; inset:0; background:rgba(15,23,42,.4); display:none; align-items:flex-end; z-index:1000}
+    .modal{background:#fff; border-radius:16px 16px 0 0; width:100%; max-height:92%; overflow:auto; box-shadow:var(--shadow); border:1px solid var(--bd)}
+    .modal .head{padding:14px 16px; border-bottom:1px solid var(--bd); display:flex; justify-content:space-between; align-items:center}
+    .modal .body{padding:14px 16px}
+    .modal .foot{padding:12px 16px; border-top:1px solid var(--bd); display:flex; justify-content:flex-end; gap:10px}
+    @media (min-width:720px){ .modal-backdrop{align-items:center; justify-content:center} .modal{border-radius:16px; max-width:860px} }
+
+    .checks{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .checks label{display:inline-flex; align-items:center; gap:6px}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card p-xl">
+      <!-- ENCABEZADO -->
+      <div class="hdr">
+        <h1>INFORME DIARIO DE TOPOGRAFÍA</h1>
+        <div class="toolbar right">
+          <button class="btn-ghost" id="btnRefreshCatalogs" title="Actualizar listas">Actualizar listas</button>
+          <button class="btn-ghost" id="btnSync">Sincronizar</button>
+          <span class="status" id="statusChip">Offline</span>
+          <button id="btnInstall" class="btn-ghost" style="display:none">Instalar</button>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- BOTONES DEL INFORME -->
+      <div class="toolbar" id="toolbarInforme">
+        <button class="btn-ghost" id="btnNuevo">Nuevo</button>
+        <button class="btn" id="btnGuardar">Guardar</button>
+        <button class="btn-err" id="btnEliminar" disabled>Eliminar</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- FORM PRINCIPAL (2 columnas) -->
+      <div class="row cols-2">
+        <div>
+          <label>Fecha del informe</label>
+          <input type="date" id="fecha_informe" />
+        </div>
+        <div>
+          <label>Jornada</label>
+          <select id="jornada">
+            <option value="diurno">Diurna</option>
+            <option value="nocturno">Nocturna</option>
+          </select>
+        </div>
+        <div>
+          <label>Frente general de trabajo</label>
+          <select id="frente">
+            <option value="Obras Principales">Obras Principales</option>
+            <option value="Mantenimiento vial">Mantenimiento vial</option>
+          </select>
+        </div>
+        <div>
+          <label>Clima</label>
+          <select id="clima">
+            <option value="Seco">Seco</option>
+            <option value="Lluvias">Lluvias</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row cols-2" style="margin-top:10px">
+        <div>
+          <label>Serial equipo de trabajo</label>
+          <select id="equipo_trabajo_id"></select>
+        </div>
+        <div>
+          <label>Topógrafo</label>
+          <select id="topografo_id"></select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:6px">
+        <div>
+          <label>Seleccionar informe</label>
+          <select id="selInforme" title="Selecciona un informe"></select>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- TRABAJOS -->
+      <div class="hdr" style="margin:8px 0; gap:10px">
+        <h2 style="margin:0; font-size:16px; color:var(--pri)">Trabajo ejecutado por la comisión de topografía</h2>
+        <div class="toolbar right">
+          <button class="btn" id="btnAddTrabajo">+ Agregar trabajo</button>
+          <button class="btn-ghost" id="btnLimpiarTrabajos">Limpiar</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tblTrabajos">
+          <thead>
+            <tr>
+              <th class="num">No.</th>
+              <th>Lote de trabajo</th>
+              <th>Frente específico</th>
+              <th>Plano de construcción</th>
+              <th>Abscisa Inicial / Final</th>
+              <th>Ordenada Inicial / Final</th>
+              <th>Elevación Inicial / Final</th>
+              <th>Actividad</th>
+              <th>Descripción</th>
+              <th class="fit">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="bodyTrabajos"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL TRABAJO -->
+  <div class="modal-backdrop" id="modalBack">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="head">
+        <strong id="modalTitle">Agregar trabajo</strong>
+        <button class="btn-ghost" id="btnCloseModal">Cerrar</button>
+      </div>
+      <div class="body">
+        <div class="checks" style="margin-bottom:6px">
+          <label>Localización:</label>
+          <label><input type="checkbox" id="chk_abscisa"> Abscisa</label>
+          <label><input type="checkbox" id="chk_ordenada"> Ordenada</label>
+          <label><input type="checkbox" id="chk_elevacion"> Elevación</label>
+        </div>
+        <div class="row cols-2">
+          <div>
+            <label>Lote de trabajo</label>
+            <select id="m_lote_control_id"></select>
+          </div>
+          <div>
+            <label>Frente específico</label>
+            <select id="m_lote_trabajo_id"></select>
+          </div>
+          <div>
+            <label>Plano de construcción (máx 50)</label>
+            <input id="m_plano_construccion" maxlength="50">
+          </div>
+
+          <div class="loc-abscisa hidden">
+            <label>Abscisa inicial</label>
+            <input id="m_abscisa_inicial" inputmode="decimal">
+          </div>
+          <div class="loc-abscisa hidden">
+            <label>Abscisa final</label>
+            <input id="m_abscisa_final" inputmode="decimal">
+          </div>
+
+          <div class="loc-ordenada hidden">
+            <label>Ordenada inicial</label>
+            <input id="m_ordenada_inicial" inputmode="decimal">
+          </div>
+          <div class="loc-ordenada hidden">
+            <label>Ordenada final</label>
+            <input id="m_ordenada_final" inputmode="decimal">
+          </div>
+
+          <div class="loc-elevacion hidden">
+            <label>Elevación inicial</label>
+            <input id="m_elevacion_inicial" inputmode="decimal">
+          </div>
+          <div class="loc-elevacion hidden">
+            <label>Elevación final</label>
+            <input id="m_elevacion_final" inputmode="decimal">
+          </div>
+
+          <div>
+            <label>Actividad</label>
+            <select id="m_actividad">
+              <option value="">Seleccione</option>
+              <option value="liberacion">Liberación</option>
+              <option value="chequeo">Chequeo</option>
+              <option value="levantamiento">Levantamiento</option>
+            </select>
+          </div>
+          <div>
+            <label>Descripción</label>
+            <input id="m_descripcion_actividad">
+          </div>
+          <div>
+            <label>Estado actividad</label>
+            <select id="m_estado_actividad">
+              <!-- dinámico según actividad -->
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="foot">
+        <button class="btn-ghost" id="btnModalCancel">Cancelar</button>
+        <button class="btn" id="btnModalSave">Guardar trabajo</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Hecho</div>
+
+  <script>
+    /* ===== Endpoints (n8n) ===== */
+    const ENDPOINT_DATA = "https://luisyg.app.n8n.cloud/webhook-test/datos";          // CRUD Sheets
+    const ENDPOINT_CATALOGS = "https://luisyg.app.n8n.cloud/webhook-test/obtener-datos"; // Catálogos (GET)
+
+    /* ===== Utils ===== */
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+    const toast = (msg, type) => { const t=$('#toast'); t.textContent=msg; t.className='toast'+(type? ' '+type:''); t.style.display='block'; setTimeout(()=>t.style.display='none', 2200); };
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const numberOrNull = v => { if (v===''||v==null) return null; const n=Number(String(v).replace(/,/g,'.')); return Number.isFinite(n)?n:null; };
+    const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
+    const KEY = (k)=>`topografia_${k}`;
+    const db = { get:(k,d)=>{try{return JSON.parse(localStorage.getItem(KEY(k))||JSON.stringify(d));}catch{return d}}, set:(k,v)=>localStorage.setItem(KEY(k), JSON.stringify(v)), del:(k)=>localStorage.removeItem(KEY(k)) };
+
+    /* ===== Estado ===== */
+    let trabajosState=[]; let currentId=null;
+    let catalogos = { equipos:[], personas:[], informes:[], lotes_control:[], lotes_trabajo:[] };
+
+    function seed(){
+      if(!db.get('equipos',null)) db.set('equipos',[]);
+      if(!db.get('personas',null)) db.set('personas',[]);
+      if(!db.get('lotes_control',null)) db.set('lotes_control',[]);
+      if(!db.get('lotes_trabajo',null)) db.set('lotes_trabajo',[]);
+      if(!db.get('informes',null)) db.set('informes',[]);
+      if(!db.get('outbox',null)) db.set('outbox',[]);
+    }
+
+    /* ===== Validación ===== */
+    function markInvalid(el, invalid){
+      if(!el) return;
+      el.classList.toggle('invalid', !!invalid);
+    }
+
+    function validateInforme(){
+      let ok=true;
+      const req = [
+        $('#fecha_informe'),
+        $('#jornada'),
+        $('#frente'),
+        $('#equipo_trabajo_id'),
+        $('#topografo_id')
+      ];
+      for(const el of req){
+        const invalid = !el.value;
+        markInvalid(el, invalid);
+        if(invalid) ok=false;
+      }
+      if(!ok) toast('Completa los campos obligatorios del informe','danger');
+      return ok;
+    }
+
+    function isFilledNumber(val){
+      const n = numberOrNull(val);
+      return n!==null;
+    }
+
+    function validateTrabajoModal(){
+      let ok=true;
+      // obligatorios base
+      const reqBase = [
+        $('#m_lote_control_id'),
+        $('#m_lote_trabajo_id'),
+        $('#m_actividad'),
+        $('#m_descripcion_actividad')
+      ];
+      for(const el of reqBase){
+        const invalid = !el.value || (el.tagName==='INPUT' && !el.value.trim());
+        markInvalid(el, invalid);
+        if(invalid) ok=false;
+      }
+
+      // Si activan localización → numéricos obligatorios
+      if($('#chk_abscisa').checked){
+        const a1=$('#m_abscisa_inicial'), a2=$('#m_abscisa_final');
+        const ia1=!isFilledNumber(a1.value), ia2=!isFilledNumber(a2.value);
+        markInvalid(a1, ia1); markInvalid(a2, ia2);
+        if(ia1||ia2) ok=false;
+      }
+      if($('#chk_ordenada').checked){
+        const o1=$('#m_ordenada_inicial'), o2=$('#m_ordenada_final');
+        const io1=!isFilledNumber(o1.value), io2=!isFilledNumber(o2.value);
+        markInvalid(o1, io1); markInvalid(o2, io2);
+        if(io1||io2) ok=false;
+      }
+      if($('#chk_elevacion').checked){
+        const e1=$('#m_elevacion_inicial'), e2=$('#m_elevacion_final');
+        const ie1=!isFilledNumber(e1.value), ie2=!isFilledNumber(e2.value);
+        markInvalid(e1, ie1); markInvalid(e2, ie2);
+        if(ie1||ie2) ok=false;
+      }
+
+      if(!ok) toast('Revisa los campos obligatorios del trabajo','danger');
+      return ok;
+    }
+
+    /* ===== API (DATA) ===== */
+    async function dataApi(payload){
+      const READ_ACTIONS = new Set(['bootstrap','list_informes','get_informe']);
+      if (READ_ACTIONS.has(payload.action)) return localApi(payload);
+      const online = navigator.onLine && ENDPOINT_DATA;
+      if (online){
+        try{
+          const res = await fetch(ENDPOINT_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+          if (!res.ok) throw new Error('HTTP '+res.status);
+          return await res.json();
+        }catch(e){
+          if (['create_informe','update_informe','delete_informe'].includes(payload.action)){
+            const outbox=db.get('outbox',[]); outbox.push(payload); db.set('outbox', outbox);
+          }
+          return localApi(payload);
+        }
+      }
+      return localApi(payload);
+    }
+
+    /* ===== API (CATÁLOGOS) ===== */
+    async function catalogsApi(){
+      const online = navigator.onLine && ENDPOINT_CATALOGS;
+      if (!online) {
+        return {
+          equipos: db.get('equipos',[]),
+          personas: db.get('personas',[]),
+          lotes_control: db.get('lotes_control',[]),
+          lotes_trabajo: db.get('lotes_trabajo',[])
+        };
+      }
+      try{
+        const res = await fetch(ENDPOINT_CATALOGS, { method:'GET' });
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        let json = await res.json();
+        if (Array.isArray(json)) json = json[0] || {};
+        const equipos = Array.isArray(json.equipos) ? json.equipos : [];
+        const personas = Array.isArray(json.personas) ? json.personas : [];
+        const lotes_control = Array.isArray(json.lotes_control) ? json.lotes_control : [];
+        const lotes_trabajo = Array.isArray(json.lotes_trabajo) ? json.lotes_trabajo : [];
+        db.set('equipos', equipos);
+        db.set('personas', personas);
+        db.set('lotes_control', lotes_control);
+        db.set('lotes_trabajo', lotes_trabajo);
+        return { equipos, personas, lotes_control, lotes_trabajo };
+      }catch(e){
+        console.error('catalogsApi error:', e);
+        toast('No se pudo actualizar listas','danger');
+        return {
+          equipos: db.get('equipos',[]),
+          personas: db.get('personas',[]),
+          lotes_control: db.get('lotes_control',[]),
+          lotes_trabajo: db.get('lotes_trabajo',[])
+        };
+      }
+    }
+
+    /* ===== API LOCAL ===== */
+    function localApi(payload){
+      const informes=db.get('informes',[]);
+      switch(payload.action){
+        case 'bootstrap':
+          return Promise.resolve({equipos:db.get('equipos',[]),personas:db.get('personas',[]),informes});
+        case 'list_informes':
+          return Promise.resolve({informes});
+        case 'get_informe':
+          return Promise.resolve({record: db.get(`informe_${payload.id}`, null)});
+        case 'create_informe': {
+          const provided = payload.data?.informe?.id;
+          const id = provided || String(Date.now());
+          const full={ id, ...payload.data.informe, trabajos:(payload.data.trabajos||[]).map(t=>({...t, id_informe:id})) };
+          const minimal={ id, fecha_informe:full.fecha_informe, frente:full.frente, jornada:full.jornada };
+          const idx=informes.findIndex(x=>x.id==id);
+          if(idx>=0) informes[idx]=minimal; else informes.unshift(minimal);
+          db.set('informes',informes);
+          db.set(`informe_${id}`, full);
+          return Promise.resolve({id});
+        }
+        case 'update_informe': {
+          const id = payload.id || payload.data?.informe?.id;
+          const full={ id, ...payload.data.informe, trabajos: payload.data.trabajos };
+          const minimal={ id, fecha_informe:full.fecha_informe, frente:full.frente, jornada:full.jornada };
+          const idx=informes.findIndex(x=>x.id==id);
+          if(idx>=0) informes[idx]=minimal; else informes.unshift(minimal);
+          db.set('informes',informes);
+          db.set(`informe_${id}`, full);
+          return Promise.resolve({ok:true});
+        }
+        case 'delete_informe': {
+          const id=payload.id;
+          const next=informes.filter(x=>x.id!=id);
+          db.set('informes', next);
+          db.del(`informe_${id}`);
+          return Promise.resolve({ok:true});
+        }
+        default:
+          return Promise.resolve({ok:true});
+      }
+    }
+
+    function mirrorLocal(payload){
+      const id = payload?.informe?.id;
+      if(!id) return;
+      const informes=db.get('informes',[]);
+      const minimal={ id, fecha_informe:payload.informe.fecha_informe, frente:payload.informe.frente, jornada:payload.informe.jornada };
+      const idx=informes.findIndex(x=>x.id==id);
+      if(idx>=0) informes[idx]=minimal; else informes.unshift(minimal);
+      db.set('informes', informes);
+      const full={ id, ...payload.informe, trabajos: payload.trabajos || [] };
+      db.set(`informe_${id}`, full);
+    }
+
+    async function trySync(){
+      if(!ENDPOINT_DATA){ toast('Sin endpoint configurado'); return; }
+      const outbox=db.get('outbox',[]);
+      if(outbox.length===0){ toast('No hay cambios pendientes','ok'); return; }
+      for(const p of outbox){
+        const r=await fetch(ENDPOINT_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+        if(!r.ok) throw new Error('Fallo de sincronización');
+      }
+      db.set('outbox',[]);
+      toast('Sincronizado','ok');
+    }
+
+    /* ===== Helpers UI ===== */
+    function fmtPair(a,b){ const x=a??''; const y=b??''; return `${x}${(x!==''||y!=='')?' / ':''}${y}`; }
+
+    function renderTrabajos(){
+      const body=$('#bodyTrabajos'); body.innerHTML='';
+      trabajosState.forEach((t,i)=>{
+        const tr=document.createElement('tr'); tr.dataset.id=t.id;
+        tr.innerHTML=`<td class="num"><span class="rownum">${i+1}</span></td>
+          <td>${t.lote_trabajo||''}</td>
+          <td>${t.frente_especifico||''}</td>
+          <td>${t.plano_construccion||''}</td>
+          <td>${fmtPair(t.abscisa_inicial,t.abscisa_final)}</td>
+          <td>${fmtPair(t.ordenada_inicial,t.ordenada_final)}</td>
+          <td>${fmtPair(t.elevacion_inicial,t.elevacion_final)}</td>
+          <td>${t.actividad||''}</td>
+          <td>${t.descripcion_actividad||''}</td>
+          <td class="fit">
+            <div class="actions-row">
+              <button class="btn-ghost">Editar</button>
+              <button class="btn-err">Eliminar</button>
+            </div>
+          </td>`;
+        tr.querySelector('.btn-ghost').addEventListener('click',()=>openTrabajoModal('edit',i,t));
+        tr.querySelector('.btn-err').addEventListener('click',()=>deleteTrabajoById(t.id));
+        body.appendChild(tr);
+      });
+    }
+
+    function optionize(sel, items, valueField, labelField, {placeholder}={}){
+      sel.innerHTML='';
+      if(placeholder){
+        const op=document.createElement('option'); op.value=''; op.textContent=placeholder; sel.appendChild(op);
+      }
+      for(const it of items){
+        const op=document.createElement('option'); op.value=it[valueField]; op.textContent=it[labelField]; sel.appendChild(op);
+      }
+    }
+    function findById(arr, id){ return (arr||[]).find(x => String(x.id)===String(id)) || null; }
+
+    // Dependencia Lotes_Control -> Lotes_Trabajo
+    function fillLoteTrabajoSelect(selectedTrabajoId){
+      const controlId = $('#m_lote_control_id').value || '';
+      const trabajos = (catalogos.lotes_trabajo||[]).filter(t => String(t.id_lote_control)===String(controlId));
+      optionize($('#m_lote_trabajo_id'), trabajos, 'id', 'descripcion', {placeholder:'Seleccione frente específico'});
+      if (selectedTrabajoId) $('#m_lote_trabajo_id').value = selectedTrabajoId;
+      // marcar válidos al cambiar
+      markInvalid($('#m_lote_trabajo_id'), !$('#m_lote_trabajo_id').value);
+    }
+
+    // Localización (mostrar/ocultar campos)
+    function updateLocControls(){
+      const ab=$('#chk_abscisa').checked; const or=$('#chk_ordenada').checked; const el=$('#chk_elevacion').checked;
+      const groups=[['loc-abscisa',ab,['m_abscisa_inicial','m_abscisa_final']],
+                    ['loc-ordenada',or,['m_ordenada_inicial','m_ordenada_final']],
+                    ['loc-elevacion',el,['m_elevacion_inicial','m_elevacion_final']]];
+      for(const [cls,on,ids] of groups){
+        $$('.'+cls).forEach(x=> x.classList.toggle('hidden', !on));
+        if(!on){ ids.forEach(id=> { const el=$('#'+id); el.value=''; markInvalid(el,false); }); }
+      }
+    }
+
+    // Estado actividad dinámico
+    function setEstadoActividadOptions(activity, presetValue){
+      const sel = $('#m_estado_actividad');
+      sel.innerHTML = '';
+      const addOpt = (v, t) => { const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); };
+
+      if(activity === 'chequeo'){
+        addOpt('n/a','N/A');
+        sel.value = 'n/a';
+        sel.disabled = true;
+      } else if(activity === 'liberacion'){
+        addOpt('cumple','Cumple');
+        addOpt('no_cumple','No cumple');
+        addOpt('otro','Otro');
+        sel.disabled = false;
+        if(presetValue) sel.value=presetValue;
+        if(!sel.value) sel.value='cumple';
+      } else { // levantamiento u otros
+        addOpt('n/a','N/A');
+        sel.disabled = false; // por si quieres cambiarlo manualmente
+        sel.value = presetValue || 'n/a';
+      }
+    }
+
+    // Modal
+    let modalMode='add'; let modalIndex=null;
+    function openTrabajoModal(mode='add', index=null, data={}){
+      modalMode=mode; modalIndex=index; $('#modalTitle').textContent = mode==='add'? 'Agregar trabajo' : 'Editar trabajo';
+      if (!data.id) data.id = uid();
+
+      // Preselección Lote Control / Lote Trabajo (por id o por nombre/descripcion)
+      optionize($('#m_lote_control_id'), catalogos.lotes_control||[], 'id', 'nombre', {placeholder:'Seleccione lote'});
+      const preCtrlId = data.lote_control_id
+        || (catalogos.lotes_control||[]).find(lc => lc.nombre === data.lote_trabajo)?.id
+        || '';
+      $('#m_lote_control_id').value = preCtrlId || '';
+
+      const preTrabajoId = data.lote_trabajo_id
+        || (catalogos.lotes_trabajo||[]).find(lt => lt.descripcion === data.frente_especifico && String(lt.id_lote_control)===String(preCtrlId))?.id
+        || '';
+      fillLoteTrabajoSelect(preTrabajoId);
+
+      $('#m_plano_construccion').value = data.plano_construccion||'';
+      $('#m_abscisa_inicial').value = data.abscisa_inicial??'';
+      $('#m_abscisa_final').value = data.abscisa_final??'';
+      $('#m_ordenada_inicial').value = data.ordenada_inicial??'';
+      $('#m_ordenada_final').value = data.ordenada_final??'';
+      $('#m_elevacion_inicial').value = data.elevacion_inicial??'';
+      $('#m_elevacion_final').value = data.elevacion_final??'';
+
+      // Actividad (select)
+      $('#m_actividad').value = data.actividad || '';
+      setEstadoActividadOptions($('#m_actividad').value, data.estado_actividad);
+
+      $('#m_descripcion_actividad').value = data.descripcion_actividad||'';
+      $('#modalTitle').dataset.tid = data.id;
+
+      // Checkboxes según datos
+      $('#chk_abscisa').checked = data.abscisa_inicial!=null || data.abscisa_final!=null;
+      $('#chk_ordenada').checked = data.ordenada_inicial!=null || data.ordenada_final!=null;
+      $('#chk_elevacion').checked = data.elevacion_inicial!=null || data.elevacion_final!=null;
+      updateLocControls();
+
+      // limpiar estados de error previos
+      $$('#modalBack input, #modalBack select').forEach(el => markInvalid(el,false));
+
+      $('#modalBack').style.display='flex'; document.body.classList.add('modal-open');
+    }
+    function closeTrabajoModal(){ $('#modalBack').style.display='none'; document.body.classList.remove('modal-open'); }
+    function readTrabajoFromModal(){
+      const useAb=$('#chk_abscisa').checked, useOr=$('#chk_ordenada').checked, useEl=$('#chk_elevacion').checked;
+      const ctrlId = $('#m_lote_control_id').value || null;
+      const trabId = $('#m_lote_trabajo_id').value || null;
+      const ctrlName = findById(catalogos.lotes_control, ctrlId)?.nombre || '';
+      const trabName = findById(catalogos.lotes_trabajo, trabId)?.descripcion || '';
+      return {
+        id: $('#modalTitle').dataset.tid || uid(),
+
+        // IDs relacionales
+        lote_control_id: ctrlId,
+        lote_trabajo_id: trabId,
+
+        // Textos para la tabla / compatibilidad Sheets
+        lote_trabajo: ctrlName,
+        frente_especifico: trabName,
+
+        plano_construccion: $('#m_plano_construccion').value.trim(),
+        abscisa_inicial: useAb? numberOrNull($('#m_abscisa_inicial').value): null,
+        abscisa_final:   useAb? numberOrNull($('#m_abscisa_final').value):   null,
+        ordenada_inicial:useOr? numberOrNull($('#m_ordenada_inicial').value):null,
+        ordenada_final:  useOr? numberOrNull($('#m_ordenada_final').value):  null,
+        elevacion_inicial:useEl? numberOrNull($('#m_elevacion_inicial').value):null,
+        elevacion_final:  useEl? numberOrNull($('#m_elevacion_final').value):  null,
+        actividad: $('#m_actividad').value || '',
+        descripcion_actividad: $('#m_descripcion_actividad').value.trim(),
+        estado_actividad: $('#m_estado_actividad').value || 'n/a',
+        estado:'activo',
+        observaciones:''
+      };
+    }
+
+    function addTrabajo(t){ if(!t.id) t.id=uid(); trabajosState.push(t); renderTrabajos(); }
+    function updateTrabajo(i,t){ trabajosState[i]=t; renderTrabajos(); }
+    function deleteTrabajoById(id){
+      if(!confirm('¿Eliminar este trabajo?')) return;
+      const idx = trabajosState.findIndex(x=>x.id===id);
+      if(idx>-1){ trabajosState.splice(idx,1); renderTrabajos(); }
+    }
+    function limpiarTrabajos(){ trabajosState=[]; renderTrabajos(); }
+
+    // Informes (listado y selects principales)
+    function renderSelInforme(list){
+      const sel=$('#selInforme');
+      sel.innerHTML='';
+      const ph=document.createElement('option'); ph.value=''; ph.textContent='— Selecciona / busca informe —'; sel.appendChild(ph);
+      for(const it of list){
+        const op=document.createElement('option');
+        op.value=it.id;
+        op.textContent=`${it.fecha_informe||''} • ${it.frente||''} • ${it.jornada||''}`;
+        sel.appendChild(op);
+      }
+    }
+
+    function readForm(){
+      const informeId = currentId || uid();
+      const informe = {
+        id: informeId,
+        fecha_creacion: new Date().toISOString(),
+        fecha_informe: $('#fecha_informe').value || todayISO(),
+        jornada: $('#jornada').value,
+        frente: $('#frente').value,
+        clima: $('#clima').value,
+        equipo_trabajo_id: $('#equipo_trabajo_id').value || null,
+        topografo_id: $('#topografo_id').value || null,
+        observaciones: ''
+      };
+      const trabajos = trabajosState.map(t => ({
+        ...t,
+        id: t.id ?? uid(),
+        id_informe: informeId
+      }));
+      return { informe, trabajos };
+    }
+
+    function fillForm(rec){
+      currentId=rec?.id||null;
+      $('#fecha_informe').value=rec?.fecha_informe||todayISO();
+      $('#jornada').value=rec?.jornada||'diurno';
+      $('#frente').value=rec?.frente||'Obras Principales';
+      $('#clima').value=rec?.clima||'Seco';
+      $('#equipo_trabajo_id').value=rec?.equipo_trabajo_id||'';
+      $('#topografo_id').value=rec?.topografo_id||'';
+      trabajosState=(rec?.trabajos||[]).map(x=> ({ id: x.id||uid(), ...x }));
+      renderTrabajos();
+      $('#btnEliminar').disabled=!currentId;
+    }
+
+    async function refreshCatalogs(){
+      const out=await catalogsApi();
+      catalogos = { ...catalogos, ...out };
+      optionize($('#equipo_trabajo_id'), catalogos.equipos||[], 'id', 'codigo_equipo', {placeholder:'Seleccione equipo'});
+      optionize($('#topografo_id'), catalogos.personas||[], 'id', 'nombre', {placeholder:'Seleccione topógrafo'});
+      optionize($('#m_lote_control_id'), catalogos.lotes_control||[], 'id', 'nombre', {placeholder:'Seleccione lote'});
+      fillLoteTrabajoSelect();
+      toast('Listas actualizadas','ok');
+    }
+
+    async function bootstrap(){
+      seed();
+      $('#fecha_informe').value=todayISO();
+      const out=await dataApi({action:'bootstrap'});
+      await refreshCatalogs();
+      renderSelInforme(out.informes||[]);
+      updateConnStatus();
+    }
+    async function recargarInformes(){
+      const out=await localApi({action:'list_informes'});
+      renderSelInforme(out.informes||[]);
+    }
+
+    // Un solo botón: crea o actualiza (con validación)
+    async function guardar(){
+      if(!validateInforme()) return;
+
+      const isUpdate = !!currentId;
+      const preId = currentId || uid();
+
+      const payload = readForm();
+      payload.informe.id = preId;
+      payload.trabajos = payload.trabajos.map(t => ({ ...t, id_informe: preId }));
+
+      const action = isUpdate ? 'update_informe' : 'create_informe';
+      await dataApi({ action, ...(isUpdate? {id:preId}:{}) , data: payload });
+
+      currentId = preId;
+      mirrorLocal(payload);
+      $('#btnEliminar').disabled = !currentId;
+      await recargarInformes();
+      toast(isUpdate? 'Actualizado':'Guardado','ok');
+    }
+
+    async function eliminar(){
+      if(!currentId) return;
+      if(!confirm('¿Eliminar el informe actual?')) return;
+      await dataApi({action:'delete_informe', id:currentId});
+      currentId=null; nuevo();
+      await recargarInformes();
+      toast('Eliminado','danger');
+    }
+    function nuevo(){ currentId=null; fillForm({trabajos:[]}); $('#selInforme').value=''; }
+
+    function updateConnStatus(){
+      const txt=(navigator.onLine ? ((ENDPOINT_DATA||ENDPOINT_CATALOGS)? 'Online (endpoint)': 'Offline (sin endpoint)') : 'Offline');
+      $('#statusChip').textContent=txt;
+    }
+    window.addEventListener('online', updateConnStatus);
+    window.addEventListener('offline', updateConnStatus);
+
+    // SW (v4) para evitar cache viejo
+    if('serviceWorker' in navigator){
+      const swCode = `const CACHE='topografia-cache-v4';
+self.addEventListener('install', e=>{ self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c=>c.addAll([]))) });
+self.addEventListener('activate', e=>{ clients.claim(); e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))) });
+self.addEventListener('fetch', e=>{
+  const req=e.request;
+  if(req.mode==='navigate') { e.respondWith(fetch(req).catch(()=>caches.match(req))); return; }
+  e.respondWith(caches.match(req).then(r=> r || fetch(req).then(res=>{ const cp=res.clone(); caches.open(CACHE).then(c=>c.put(req, cp)); return res; })));
+});`;
+      const blob=new Blob([swCode],{type:'text/javascript'});
+      navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+    }
+
+    /* ===== Eventos UI ===== */
+    $('#btnAddTrabajo').addEventListener('click', ()=> openTrabajoModal('add'));
+    $('#btnCloseModal').addEventListener('click', closeTrabajoModal);
+    $('#btnModalCancel').addEventListener('click', closeTrabajoModal);
+
+    // Guardar trabajo con validación
+    $('#btnModalSave').addEventListener('click', ()=>{
+      if(!validateTrabajoModal()) return;
+      const t=readTrabajoFromModal();
+      if(modalMode==='add') addTrabajo(t); else updateTrabajo(modalIndex, t);
+      closeTrabajoModal();
+    });
+
+    // Dependencia Lote Control -> Lote Trabajo
+    $('#m_lote_control_id').addEventListener('change', ()=>{
+      markInvalid($('#m_lote_control_id'), !$('#m_lote_control_id').value);
+      fillLoteTrabajoSelect();
+    });
+    $('#m_lote_trabajo_id').addEventListener('change', ()=>{
+      markInvalid($('#m_lote_trabajo_id'), !$('#m_lote_trabajo_id').value);
+    });
+
+    // Localización
+    $('#chk_abscisa').addEventListener('change', updateLocControls);
+    $('#chk_ordenada').addEventListener('change', updateLocControls);
+    $('#chk_elevacion').addEventListener('change', updateLocControls);
+
+    // Actividad → Estado actividad dinámico
+    $('#m_actividad').addEventListener('change', ()=>{
+      setEstadoActividadOptions($('#m_actividad').value, null);
+      markInvalid($('#m_actividad'), !$('#m_actividad').value);
+    });
+
+    // Otros botones
+    $('#btnLimpiarTrabajos').addEventListener('click', ()=> limpiarTrabajos());
+    $('#btnNuevo').addEventListener('click', nuevo);
+    $('#btnGuardar').addEventListener('click', ()=> guardar().catch(e=>{console.error(e); toast('Error al guardar','danger')}));
+    $('#btnEliminar').addEventListener('click', ()=> eliminar().catch(e=>{console.error(e); toast('Error al eliminar','danger')}));
+    $('#btnSync').addEventListener('click', ()=> trySync().catch(e=>{console.error(e); toast('Error al sincronizar','danger')}));
+    $('#btnRefreshCatalogs').addEventListener('click', ()=> refreshCatalogs().catch(e=>{console.error(e); toast('Error listas','danger')}));
+
+    $('#selInforme').addEventListener('change', async (e)=>{
+      const id=e.target.value;
+      if(!id){ nuevo(); return; }
+      try{
+        const {record}=await dataApi({action:'get_informe', id});
+        fillForm(record);
+      }catch(err){
+        console.error(err); toast('No se pudo cargar','danger');
+      }
+    });
+
+    // Arranque
+    (async ()=>{ try{ await bootstrap(); }catch(err){ console.error(err); toast('No se pudo conectar','danger'); } })();
+
+    // === Registro de SW (PWA) ===
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('sw.js');
+          console.log('[SW] registrado', reg.scope);
+        } catch (e) {
+          console.warn('[SW] no se pudo registrar', e);
+        }
+      });
+    }
+
+    // Auto-sync cortesía al volver online
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        if (typeof trySync === 'function') trySync().catch(()=>{});
+      }
+    });
+    window.addEventListener('online', () => {
+      if (typeof trySync === 'function') trySync().catch(()=>{});
+    });
+
+    // === Botón Instalar (opcional) ===
+    let _deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      _deferredPrompt = e;
+      const btn = document.getElementById('btnInstall');
+      if (btn) btn.style.display = 'inline-flex';
+    });
+    document.getElementById('btnInstall')?.addEventListener('click', async () => {
+      if (_deferredPrompt) {
+        _deferredPrompt.prompt();
+        const choice = await _deferredPrompt.userChoice;
+        console.log('Instalación:', choice.outcome);
+        _deferredPrompt = null;
+      }
+    });
+
+  </script>
+</body>
+</html>

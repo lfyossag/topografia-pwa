@@ -1,0 +1,12 @@
+{
+  "name": "Informe Diario de Topografía",
+  "short_name": "Topografía",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#1f3a8a",
+  "icons": [
+    { "src": "icons/pwa-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/pwa-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
