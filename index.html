@@ -55,6 +55,11 @@
 
     .status{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--bd2); background:var(--soft)}
 
+    /* Botón eliminar foto */
+    .photo-card .btn-delete{position:absolute;right:4px;top:4px;width:24px;height:24px;border-radius:4px;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;border:1px solid var(--bd2)}
+    .photo-card .btn-delete:hover{background:#fff}
+    .photo-card .btn-delete svg{width:14px;height:14px;fill:var(--err)}
+
     /* ===== Modal ===== */
     .modal-backdrop{position:fixed; inset:0; background:rgba(15,23,42,.4); display:none; align-items:flex-end; z-index:1000}
     .modal{background:#fff; border-radius:16px 16px 0 0; width:100%; max-height:92%; overflow:auto; box-shadow:var(--shadow); border:1px solid var(--bd)}
@@ -66,6 +71,21 @@
     .checks{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
     .checks label{display:inline-flex; align-items:center; gap:6px}
     .hidden{display:none}
+
+    /* ===== Fotos (solo modal) ===== */
+    .photos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+    .photo-card{border:1px solid var(--bd2);border-radius:10px;padding:8px;background:#fff;display:flex;flex-direction:column;gap:6px;position:relative}
+    .photo-card img{width:100%;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--bd)}
+    .photo-card .photo-preview{position:relative;display:inline-block;width:100%}
+    .photo-card .photo-preview .local-icon{position:absolute;top:8px;left:8px;background:rgba(255,193,7,0.9);color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;opacity:0.9}
+    .photo-row{display:flex;gap:6px;align-items:center}
+    .photo-row input[type="text"]{flex:1;min-width:0}
+    .badge{display:inline-block;padding:2px 6px;border:1px solid var(--bd2);border-radius:999px;font-size:11px;color:var(--muted)}
+    .badge.ok{color:#065f46;border-color:#065f46}
+    .badge.warn{color:#a16207;border-color:#a16207}
+    .photo-card .desc-input{margin-top:6px;padding-right:34px}
+    .btn-link{background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;transition:background 0.2s;font-size:14px}
+    .btn-link:hover{background:#f0f0f0}
   </style>
 </head>
 <body>
@@ -244,10 +264,19 @@
           </div>
           <div>
             <label>Estado actividad</label>
-            <select id="m_estado_actividad">
-              <!-- dinámico según actividad -->
-            </select>
+            <select id="m_estado_actividad"></select>
           </div>
+
+          <!-- ===== FOTOS ===== -->
+          <div style="grid-column:1/-1">
+            <div class="photo-row">
+              <label>Fotos (mínimo 2)</label>
+              <input type="file" id="m_fotos_input" accept="image/*" multiple capture="environment" style="margin-left:auto">
+            </div>
+            <div id="m_fotos_list" class="photos-grid" style="margin-top:8px"></div>
+          </div>
+          <!-- ===== /FOTOS ===== -->
+
         </div>
       </div>
       <div class="foot">
@@ -261,8 +290,9 @@
 
   <script>
     /* ===== Endpoints (n8n) ===== */
-    const ENDPOINT_DATA = "https://luisyg.app.n8n.cloud/webhook/datos";          // CRUD Sheets
-    const ENDPOINT_CATALOGS = "https://luisyg.app.n8n.cloud/webhook/obtener-datos"; // Catálogos (GET)
+    const ENDPOINT_DATA = "https://luisyg.app.n8n.cloud/webhook/datos";              // CRUD Sheets
+    const ENDPOINT_CATALOGS = "https://luisyg.app.n8n.cloud/webhook/obtener-datos";  // Catálogos (GET)
+    const ENDPOINT_UPLOAD = "https://luisyg.app.n8n.cloud/webhook/subir-foto";       // Subir fotos (multipart)
 
     /* ===== Utils ===== */
     const $ = (sel, el=document) => el.querySelector(sel);
@@ -273,6 +303,19 @@
     const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
     const KEY = (k)=>`topografia_${k}`;
     const db = { get:(k,d)=>{try{return JSON.parse(localStorage.getItem(KEY(k))||JSON.stringify(d));}catch{return d}}, set:(k,v)=>localStorage.setItem(KEY(k), JSON.stringify(v)), del:(k)=>localStorage.removeItem(KEY(k)) };
+
+    // Convierte link de Drive "view" a link embebible (uc?export=view)
+    function drivePreview(url){
+      if(!url) return '';
+      // Extraer ID de diferentes formatos de URL de Drive
+      let id = null;
+      if(url.includes('drive.google.com')){
+        const m1 = url.match(/\/d\/([^/]+)/);
+        const m2 = url.match(/id=([^&]+)/);
+        id = m1 ? m1[1] : (m2 ? m2[1] : null);
+      }
+      return id ? `https://drive.google.com/uc?export=view&id=${id}` : url;
+    }
 
     /* ===== Estado ===== */
     let trabajosState=[]; let currentId=null;
@@ -295,83 +338,128 @@
 
     function validateInforme(){
       let ok=true;
-      const req = [
-        $('#fecha_informe'),
-        $('#jornada'),
-        $('#frente'),
-        $('#equipo_trabajo_id'),
-        $('#topografo_id')
-      ];
-      for(const el of req){
-        const invalid = !el.value;
-        markInvalid(el, invalid);
-        if(invalid) ok=false;
-      }
+      const req = [$('#fecha_informe'),$('#jornada'),$('#frente'),$('#equipo_trabajo_id'),$('#topografo_id')];
+      for(const el of req){ const invalid = !el.value; markInvalid(el, invalid); if(invalid) ok=false; }
       if(!ok) toast('Completa los campos obligatorios del informe','danger');
       return ok;
     }
 
-    function isFilledNumber(val){
-      const n = numberOrNull(val);
-      return n!==null;
-    }
+    function isFilledNumber(val){ const n = numberOrNull(val); return n!==null; }
+
+    // Recuento de fotos reales (locales + ya subidas)
+    function countPhotos(arr){ return (arr||[]).filter(p => p.__local || p.url).length; }
 
     function validateTrabajoModal(){
       let ok=true;
-      // obligatorios base
-      const reqBase = [
-        $('#m_lote_control_id'),
-        $('#m_lote_trabajo_id'),
-        $('#m_actividad'),
-        $('#m_descripcion_actividad')
-      ];
-      for(const el of reqBase){
-        const invalid = !el.value || (el.tagName==='INPUT' && !el.value.trim());
-        markInvalid(el, invalid);
-        if(invalid) ok=false;
-      }
+      const reqBase = [$('#m_lote_control_id'),$('#m_lote_trabajo_id'),$('#m_actividad'),$('#m_descripcion_actividad')];
+      for(const el of reqBase){ const invalid = !el.value || (el.tagName==='INPUT' && !el.value.trim()); markInvalid(el, invalid); if(invalid) ok=false; }
 
-      // Si activan localización → numéricos obligatorios
       if($('#chk_abscisa').checked){
         const a1=$('#m_abscisa_inicial'), a2=$('#m_abscisa_final');
         const ia1=!isFilledNumber(a1.value), ia2=!isFilledNumber(a2.value);
-        markInvalid(a1, ia1); markInvalid(a2, ia2);
-        if(ia1||ia2) ok=false;
+        markInvalid(a1, ia1); markInvalid(a2, ia2); if(ia1||ia2) ok=false;
       }
       if($('#chk_ordenada').checked){
         const o1=$('#m_ordenada_inicial'), o2=$('#m_ordenada_final');
         const io1=!isFilledNumber(o1.value), io2=!isFilledNumber(o2.value);
-        markInvalid(o1, io1); markInvalid(o2, io2);
-        if(io1||io2) ok=false;
+        markInvalid(o1, io1); markInvalid(o2, io2); if(io1||io2) ok=false;
       }
       if($('#chk_elevacion').checked){
         const e1=$('#m_elevacion_inicial'), e2=$('#m_elevacion_final');
         const ie1=!isFilledNumber(e1.value), ie2=!isFilledNumber(e2.value);
-        markInvalid(e1, ie1); markInvalid(e2, ie2);
-        if(ie1||ie2) ok=false;
+        markInvalid(e1, ie1); markInvalid(e2, ie2); if(ie1||ie2) ok=false;
       }
+
+      // mínimo 2 fotos contando locales + subidas
+      if (countPhotos(__modalPhotos) < 2){ toast('Debes adjuntar al menos 2 fotos','danger'); ok=false; }
 
       if(!ok) toast('Revisa los campos obligatorios del trabajo','danger');
       return ok;
+    }
+
+    // Sincroniza los valores de los inputs de descripción de fotos con el array __modalPhotos
+    function syncPhotoDescriptions() {
+      document.querySelectorAll('#m_fotos_list .desc-input').forEach((input, idx) => {
+        if (__modalPhotos[idx]) {
+          __modalPhotos[idx].desc = input.value;
+          __modalPhotos[idx].descripcion_foto = input.value;
+        }
+      });
+    }
+
+    // Sincroniza todas las descripciones de fotos de todos los trabajos antes de guardar
+    function syncAllPhotoDescriptions() {
+      // Si el modal está abierto, sincroniza __modalPhotos
+      if (document.body.classList.contains('modal-open')) {
+        document.querySelectorAll('#m_fotos_list .desc-input').forEach((input, idx) => {
+          if (window.__modalPhotos && window.__modalPhotos[idx]) {
+            window.__modalPhotos[idx].desc = input.value;
+          }
+        });
+      }
+      // Para cada trabajo, sincroniza las descripciones almacenadas
+      if (window.trabajosState) {
+        window.trabajosState.forEach(trabajo => {
+          if (trabajo.fotos && Array.isArray(trabajo.fotos)) {
+            trabajo.fotos.forEach(foto => {
+              // Si hay un input visible para esta foto, úsalo
+              const input = document.querySelector(`#m_fotos_list .desc-input[data-foto-id='${foto.id_foto||foto.id}']`);
+              if (input) {
+                foto.desc = input.value;
+                foto.descripcion_foto = input.value;
+              } else if (foto.desc) {
+                foto.descripcion_foto = foto.desc;
+              }
+            });
+          }
+        });
+      }
     }
 
     /* ===== API (DATA) ===== */
     async function dataApi(payload){
       const READ_ACTIONS = new Set(['bootstrap','list_informes','get_informe']);
       if (READ_ACTIONS.has(payload.action)) return localApi(payload);
+      
       const online = navigator.onLine && ENDPOINT_DATA;
+      console.log(`🌐 dataApi - Online: ${online}, Action: ${payload.action}`);
+      
       if (online){
         try{
-          const res = await fetch(ENDPOINT_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-          if (!res.ok) throw new Error('HTTP '+res.status);
-          return await res.json();
+          console.log('📤 Sending to n8n:', {
+            endpoint: ENDPOINT_DATA,
+            action: payload.action,
+            dataKeys: Object.keys(payload.data || {}),
+            trabajosCount: payload.data?.trabajos?.length || 0,
+            fotosTotal: (payload.data?.trabajos || []).reduce((n,t) => n + (t.fotos||[]).length, 0)
+          });
+          
+          const res = await fetch(ENDPOINT_DATA, {
+            method:'POST', 
+            headers:{'Content-Type':'application/json'}, 
+            body:JSON.stringify(payload)
+          });
+          
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('❌ n8n response error:', res.status, errorText);
+            throw new Error(`HTTP ${res.status}: ${errorText}`);
+          }
+          
+          const result = await res.json();
+          console.log('✅ n8n response success:', result);
+          return result;
         }catch(e){
+          console.error('❌ dataApi error:', e);
           if (['create_informe','update_informe','delete_informe'].includes(payload.action)){
+            console.log('💾 Guardando en outbox para sincronización posterior');
             const outbox=db.get('outbox',[]); outbox.push(payload); db.set('outbox', outbox);
           }
+          console.log('📱 Cayendo a localApi');
           return localApi(payload);
         }
       }
+      console.log('📱 Usando localApi (offline)');
       return localApi(payload);
     }
 
@@ -379,12 +467,7 @@
     async function catalogsApi(){
       const online = navigator.onLine && ENDPOINT_CATALOGS;
       if (!online) {
-        return {
-          equipos: db.get('equipos',[]),
-          personas: db.get('personas',[]),
-          lotes_control: db.get('lotes_control',[]),
-          lotes_trabajo: db.get('lotes_trabajo',[])
-        };
+        return {equipos: db.get('equipos',[]), personas: db.get('personas',[]), lotes_control: db.get('lotes_control',[]), lotes_trabajo: db.get('lotes_trabajo',[])};
       }
       try{
         const res = await fetch(ENDPOINT_CATALOGS, { method:'GET' });
@@ -395,20 +478,12 @@
         const personas = Array.isArray(json.personas) ? json.personas : [];
         const lotes_control = Array.isArray(json.lotes_control) ? json.lotes_control : [];
         const lotes_trabajo = Array.isArray(json.lotes_trabajo) ? json.lotes_trabajo : [];
-        db.set('equipos', equipos);
-        db.set('personas', personas);
-        db.set('lotes_control', lotes_control);
-        db.set('lotes_trabajo', lotes_trabajo);
+        db.set('equipos', equipos); db.set('personas', personas); db.set('lotes_control', lotes_control); db.set('lotes_trabajo', lotes_trabajo);
         return { equipos, personas, lotes_control, lotes_trabajo };
       }catch(e){
         console.error('catalogsApi error:', e);
         toast('No se pudo actualizar listas','danger');
-        return {
-          equipos: db.get('equipos',[]),
-          personas: db.get('personas',[]),
-          lotes_control: db.get('lotes_control',[]),
-          lotes_trabajo: db.get('lotes_trabajo',[])
-        };
+        return {equipos: db.get('equipos',[]), personas: db.get('personas',[]), lotes_control: db.get('lotes_control',[]), lotes_trabajo: db.get('lotes_trabajo',[])};
       }
     }
 
@@ -429,8 +504,7 @@
           const minimal={ id, fecha_informe:full.fecha_informe, frente:full.frente, jornada:full.jornada };
           const idx=informes.findIndex(x=>x.id==id);
           if(idx>=0) informes[idx]=minimal; else informes.unshift(minimal);
-          db.set('informes',informes);
-          db.set(`informe_${id}`, full);
+          db.set('informes',informes); db.set(`informe_${id}`, full);
           return Promise.resolve({id});
         }
         case 'update_informe': {
@@ -439,19 +513,16 @@
           const minimal={ id, fecha_informe:full.fecha_informe, frente:full.frente, jornada:full.jornada };
           const idx=informes.findIndex(x=>x.id==id);
           if(idx>=0) informes[idx]=minimal; else informes.unshift(minimal);
-          db.set('informes',informes);
-          db.set(`informe_${id}`, full);
+          db.set('informes',informes); db.set(`informe_${id}`, full);
           return Promise.resolve({ok:true});
         }
         case 'delete_informe': {
           const id=payload.id;
           const next=informes.filter(x=>x.id!=id);
-          db.set('informes', next);
-          db.del(`informe_${id}`);
+          db.set('informes', next); db.del(`informe_${id}`);
           return Promise.resolve({ok:true});
         }
-        default:
-          return Promise.resolve({ok:true});
+        default: return Promise.resolve({ok:true});
       }
     }
 
@@ -475,8 +546,7 @@
         const r=await fetch(ENDPOINT_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
         if(!r.ok) throw new Error('Fallo de sincronización');
       }
-      db.set('outbox',[]);
-      toast('Sincronizado','ok');
+      db.set('outbox',[]); toast('Sincronizado','ok');
     }
 
     /* ===== Helpers UI ===== */
@@ -509,14 +579,149 @@
 
     function optionize(sel, items, valueField, labelField, {placeholder}={}){
       sel.innerHTML='';
-      if(placeholder){
-        const op=document.createElement('option'); op.value=''; op.textContent=placeholder; sel.appendChild(op);
-      }
-      for(const it of items){
-        const op=document.createElement('option'); op.value=it[valueField]; op.textContent=it[labelField]; sel.appendChild(op);
-      }
+      if(placeholder){ const op=document.createElement('option'); op.value=''; op.textContent=placeholder; sel.appendChild(op); }
+      for(const it of items){ const op=document.createElement('option'); op.value=it[valueField]; op.textContent=it[labelField]; sel.appendChild(op); }
     }
     function findById(arr, id){ return (arr||[]).find(x => String(x.id)===String(id)) || null; }
+
+    // ====== FOTOS (estado del modal) ======
+    // cada item: { localId, __local, __blob, url, desc, status, id_foto }
+    let __modalPhotos = [];
+
+    function renderModalPhotos(){
+      const wrap = document.getElementById('m_fotos_list');
+      wrap.innerHTML = '';
+      console.log('🖼️ Renderizando fotos del modal:', __modalPhotos.map(p => ({
+        localId: p.localId,
+        isLocal: p.__local,
+        hasBlob: !!p.__blob,
+        hasPreviewUrl: !!p.previewUrl,
+        hasUrl: !!p.url
+      })));
+      __modalPhotos.forEach(p=>{
+        // Determinar la fuente de la imagen
+        let src = '';
+        if (p.__local && p.__blob) {
+          // Para fotos locales, crear ObjectURL si no existe
+          if (!p.previewUrl) {
+            try { 
+              p.previewUrl = URL.createObjectURL(p.__blob); 
+              console.log('✅ Preview creado para foto local:', p.localId);
+            } catch(e) { 
+              console.warn('❌ No se pudo crear preview:', e); 
+            }
+          }
+          src = p.previewUrl;
+        } else if (!p.__local && p.url) {
+          // Para fotos subidas, usar DrivePreview
+          src = drivePreview(p.url);
+        }
+        
+        const card = document.createElement('div');
+        card.className = 'photo-card';
+        card.innerHTML = `
+          <div class="photo-preview">
+            <img src="${src||''}" alt="foto" ${!src ? 'style="background:#f0f0f0;min-height:90px;display:flex;align-items:center;justify-content:center" title="Vista previa no disponible"' : ''}>
+            ${p.__local ? '<div class="local-icon">📱</div>' : ''}
+          </div>
+          <input class="desc-input" type="text" placeholder="Descripción" value="${p.desc||''}" data-foto-id="${p.id_foto||p.id||p.localId||''}" />
+          <div class="photo-row">
+            <span class="badge ${p.__local?'warn':'ok'}">${p.__local?'Local':'Subida'}</span>
+            ${!p.__local && p.url ? `<button class="btn-link" title="Abrir en Drive">🔗</button>` : ''}
+          </div>
+          <button title="Eliminar foto" class="btn-delete" aria-label="Eliminar foto">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M6 7h12v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM9 4h6l1 2H8l1-2zM10 9v8h2V9h-2zm4 0v8h2V9h-2z"/></svg>
+          </button>
+        `;
+        const descInput = card.querySelector('input');
+        const delBtn = card.querySelector('.btn-delete');
+        const linkBtn = card.querySelector('.btn-link');
+        
+        descInput.addEventListener('input', ()=>{ p.desc = descInput.value; });
+        delBtn.addEventListener('click', ()=>{
+          __modalPhotos = __modalPhotos.filter(x=>x.localId!==p.localId);
+          renderModalPhotos();
+        });
+        
+        // Botón de enlace directo
+        if (linkBtn && p.url) {
+          linkBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(p.url, '_blank');
+          });
+        }
+        wrap.appendChild(card);
+      });
+    }
+
+    async function handleFilesSelected(files){
+      for (const f of files){
+        const previewUrl = URL.createObjectURL(f);
+        __modalPhotos.push({
+          localId: uid(),
+          __local: true,
+          __blob: f,
+          previewUrl,
+          url: null,
+          desc: '',
+          status: 'local',
+          id_foto: null
+        });
+      }
+      renderModalPhotos();
+    }
+
+    async function uploadOnePhoto(photo, id_trabajo){
+      const fd = new FormData();
+      fd.append('file', photo.__blob, `foto_${id_trabajo}_${Date.now()}.jpg`);
+      fd.append('id_trabajo', id_trabajo);
+      fd.append('descripcion_foto', photo.desc||'');
+      
+      console.log('📸 Uploading photo for trabajo:', id_trabajo, {
+        description: photo.desc || '(empty)',
+        hasBlob: !!photo.__blob,
+        localId: photo.localId
+      });
+      
+      const res = await fetch(ENDPOINT_UPLOAD, { method:'POST', body: fd });
+      if(!res.ok) {
+        const errorText = await res.text();
+        console.error('Upload failed:', res.status, errorText);
+        throw new Error(`Fallo al subir foto: ${res.status} - ${errorText}`);
+      }
+      
+      const json = await res.json();
+      console.log('Upload response full:', JSON.stringify(json, null, 2));
+      
+      // Buscar datos en diferentes niveles de anidación
+      const data = json.data || json;
+      const remoteId = data.id_foto || data.id || data.fileId || json.id_foto || json.id || 
+                      (json.response && json.response.id) || uid();
+      const remoteUrl = data.url || data.webViewLink || data.webContentLink || data.fileUrl || 
+                       data.link || json.url || json.webViewLink || json.fileUrl || 
+                       (json.response && json.response.webViewLink) || null;
+      
+      photo.id_foto = remoteId;
+      photo.url = remoteUrl;
+      // Preservar la descripción que se envió
+      photo.descripcion_foto = photo.desc || '';
+      
+      if(photo.url) {
+        photo.previewUrl = drivePreview(photo.url);
+        console.log('✓ Photo uploaded successfully:', {
+          id: photo.id_foto,
+          url: photo.url,
+          preview: photo.previewUrl,
+          description: photo.descripcion_foto
+        });
+      } else {
+        console.warn('⚠️ Photo uploaded but no URL received:', json);
+      }
+      photo.__local = false;
+      photo.__blob = null;
+      photo.status = 'uploaded';
+      return photo;
+    }
 
     // Dependencia Lotes_Control -> Lotes_Trabajo
     function fillLoteTrabajoSelect(selectedTrabajoId){
@@ -524,7 +729,6 @@
       const trabajos = (catalogos.lotes_trabajo||[]).filter(t => String(t.id_lote_control)===String(controlId));
       optionize($('#m_lote_trabajo_id'), trabajos, 'id', 'descripcion', {placeholder:'Seleccione frente específico'});
       if (selectedTrabajoId) $('#m_lote_trabajo_id').value = selectedTrabajoId;
-      // marcar válidos al cambiar
       markInvalid($('#m_lote_trabajo_id'), !$('#m_lote_trabajo_id').value);
     }
 
@@ -547,20 +751,12 @@
       const addOpt = (v, t) => { const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); };
 
       if(activity === 'chequeo'){
-        addOpt('n/a','N/A');
-        sel.value = 'n/a';
-        sel.disabled = true;
+        addOpt('n/a','N/A'); sel.value = 'n/a'; sel.disabled = true;
       } else if(activity === 'liberacion'){
-        addOpt('cumple','Cumple');
-        addOpt('no_cumple','No cumple');
-        addOpt('otro','Otro');
-        sel.disabled = false;
-        if(presetValue) sel.value=presetValue;
-        if(!sel.value) sel.value='cumple';
+        addOpt('cumple','Cumple'); addOpt('no_cumple','No cumple'); addOpt('otro','Otro');
+        sel.disabled = false; if(presetValue) sel.value=presetValue; if(!sel.value) sel.value='cumple';
       } else { // levantamiento u otros
-        addOpt('n/a','N/A');
-        sel.disabled = false; // por si quieres cambiarlo manualmente
-        sel.value = presetValue || 'n/a';
+        addOpt('n/a','N/A'); sel.disabled = false; sel.value = presetValue || 'n/a';
       }
     }
 
@@ -569,63 +765,62 @@
     function openTrabajoModal(mode='add', index=null, data={}){
       modalMode=mode; modalIndex=index; $('#modalTitle').textContent = mode==='add'? 'Agregar trabajo' : 'Editar trabajo';
       if (!data.id) data.id = uid();
-
-      // Preselección Lote Control / Lote Trabajo (por id o por nombre/descripcion)
-      optionize($('#m_lote_control_id'), catalogos.lotes_control||[], 'id', 'nombre', {placeholder:'Seleccione lote'});
-      const preCtrlId = data.lote_control_id
-        || (catalogos.lotes_control||[]).find(lc => lc.nombre === data.lote_trabajo)?.id
-        || '';
-      $('#m_lote_control_id').value = preCtrlId || '';
-
-      const preTrabajoId = data.lote_trabajo_id
-        || (catalogos.lotes_trabajo||[]).find(lt => lt.descripcion === data.frente_especifico && String(lt.id_lote_control)===String(preCtrlId))?.id
-        || '';
-      fillLoteTrabajoSelect(preTrabajoId);
-
-      $('#m_plano_construccion').value = data.plano_construccion||'';
-      $('#m_abscisa_inicial').value = data.abscisa_inicial??'';
-      $('#m_abscisa_final').value = data.abscisa_final??'';
-      $('#m_ordenada_inicial').value = data.ordenada_inicial??'';
-      $('#m_ordenada_final').value = data.ordenada_final??'';
-      $('#m_elevacion_inicial').value = data.elevacion_inicial??'';
-      $('#m_elevacion_final').value = data.elevacion_final??'';
-
-      // Actividad (select)
-      $('#m_actividad').value = data.actividad || '';
-      setEstadoActividadOptions($('#m_actividad').value, data.estado_actividad);
-
-      $('#m_descripcion_actividad').value = data.descripcion_actividad||'';
       $('#modalTitle').dataset.tid = data.id;
 
-      // Checkboxes según datos
+      // Lotes
+      optionize($('#m_lote_control_id'), catalogos.lotes_control||[], 'id', 'nombre', {placeholder:'Seleccione lote'});
+      const preCtrlId = data.lote_control_id || (catalogos.lotes_control||[]).find(lc => lc.nombre === data.lote_trabajo)?.id || '';
+      $('#m_lote_control_id').value = preCtrlId || '';
+      const preTrabajoId = data.lote_trabajo_id || (catalogos.lotes_trabajo||[]).find(lt => lt.descripcion === data.frente_especifico && String(lt.id_lote_control)===String(preCtrlId))?.id || '';
+      fillLoteTrabajoSelect(preTrabajoId);
+
+      // Números y textos
+      $('#m_plano_construccion').value = data.plano_construccion||'';
+      $('#m_abscisa_inicial').value = data.abscisa_inicial??''; $('#m_abscisa_final').value = data.abscisa_final??'';
+      $('#m_ordenada_inicial').value = data.ordenada_inicial??''; $('#m_ordenada_final').value = data.ordenada_final??'';
+      $('#m_elevacion_inicial').value = data.elevacion_inicial??''; $('#m_elevacion_final').value = data.elevacion_final??'';
+
+      $('#m_actividad').value = data.actividad || ''; setEstadoActividadOptions($('#m_actividad').value, data.estado_actividad);
+      $('#m_descripcion_actividad').value = data.descripcion_actividad||'';
+
+      // Checks según datos
       $('#chk_abscisa').checked = data.abscisa_inicial!=null || data.abscisa_final!=null;
       $('#chk_ordenada').checked = data.ordenada_inicial!=null || data.ordenada_final!=null;
       $('#chk_elevacion').checked = data.elevacion_inicial!=null || data.elevacion_final!=null;
       updateLocControls();
 
-      // limpiar estados de error previos
+      // FOTOS (cargar existentes + limpiar previas locales)
+      __modalPhotos = (data.fotos||[]).map(f=>({
+        localId: uid(),
+        __local: !f.url,           // si no tiene url, la trataremos como local (edge case)
+        __blob: null,
+        previewUrl: f.url ? drivePreview(f.url) : (f.previewUrl||''),
+        url: f.url || null,
+        desc: f.descripcion_foto||'',
+        status: f.url ? 'uploaded' : 'local',
+        id_foto: f.id || null
+      }));
+      renderModalPhotos();
+
+      // limpiar errores previos
       $$('#modalBack input, #modalBack select').forEach(el => markInvalid(el,false));
 
       $('#modalBack').style.display='flex'; document.body.classList.add('modal-open');
     }
-    function closeTrabajoModal(){ $('#modalBack').style.display='none'; document.body.classList.remove('modal-open'); }
+    function closeTrabajoModal(){ $('#modalBack').style.display='none'; document.body.classList.remove('modal-open'); __modalPhotos = []; }
+
     function readTrabajoFromModal(){
       const useAb=$('#chk_abscisa').checked, useOr=$('#chk_ordenada').checked, useEl=$('#chk_elevacion').checked;
       const ctrlId = $('#m_lote_control_id').value || null;
       const trabId = $('#m_lote_trabajo_id').value || null;
       const ctrlName = findById(catalogos.lotes_control, ctrlId)?.nombre || '';
       const trabName = findById(catalogos.lotes_trabajo, trabId)?.descripcion || '';
+      // Sincroniza descripciones antes de devolver el objeto
+      __modalPhotos.forEach(f => { f.descripcion_foto = f.desc; });
       return {
         id: $('#modalTitle').dataset.tid || uid(),
-
-        // IDs relacionales
-        lote_control_id: ctrlId,
-        lote_trabajo_id: trabId,
-
-        // Textos para la tabla / compatibilidad Sheets
-        lote_trabajo: ctrlName,
-        frente_especifico: trabName,
-
+        lote_control_id: ctrlId, lote_trabajo_id: trabId,
+        lote_trabajo: ctrlName, frente_especifico: trabName,
         plano_construccion: $('#m_plano_construccion').value.trim(),
         abscisa_inicial: useAb? numberOrNull($('#m_abscisa_inicial').value): null,
         abscisa_final:   useAb? numberOrNull($('#m_abscisa_final').value):   null,
@@ -637,7 +832,17 @@
         descripcion_actividad: $('#m_descripcion_actividad').value.trim(),
         estado_actividad: $('#m_estado_actividad').value || 'n/a',
         estado:'activo',
-        observaciones:''
+        observaciones:'',
+        // Mantener fotos (locales y subidas)
+        fotos: __modalPhotos.map(p=>({
+          id: p.id_foto || uid(),
+          id_trabajo: $('#modalTitle').dataset.tid || null,
+          desc: p.desc || '', // ← Copiar también desc
+          descripcion_foto: p.descripcion_foto || p.desc || '', // ← Usar desc como fallback
+          url: p.url || null,
+          __local: !!p.__local,
+          __blob: p.__blob || null
+        }))
       };
     }
 
@@ -657,15 +862,13 @@
       const ph=document.createElement('option'); ph.value=''; ph.textContent='— Selecciona / busca informe —'; sel.appendChild(ph);
       for(const it of list){
         const op=document.createElement('option');
-        op.value=it.id;
-        op.textContent=`${it.fecha_informe||''} • ${it.frente||''} • ${it.jornada||''}`;
+        op.value=it.id; op.textContent=`${it.fecha_informe||''} • ${it.frente||''} • ${it.jornada||''}`;
         sel.appendChild(op);
       }
     }
 
-    function readForm(){
-      const informeId = currentId || uid();
-      const informe = {
+    function buildInformeObj(informeId){
+      return {
         id: informeId,
         fecha_creacion: new Date().toISOString(),
         fecha_informe: $('#fecha_informe').value || todayISO(),
@@ -676,12 +879,6 @@
         topografo_id: $('#topografo_id').value || null,
         observaciones: ''
       };
-      const trabajos = trabajosState.map(t => ({
-        ...t,
-        id: t.id ?? uid(),
-        id_informe: informeId
-      }));
-      return { informe, trabajos };
     }
 
     function fillForm(rec){
@@ -720,25 +917,142 @@
       renderSelInforme(out.informes||[]);
     }
 
-    // Un solo botón: crea o actualiza (con validación)
+    // Subida diferida: recorre todos los trabajos y sube fotos locales
+    async function uploadPendingPhotos(informeId){
+      if(!navigator.onLine) return;
+      
+      // Asegurar que todas las fotos tengan descripción actualizada
+      for (const t of trabajosState) {
+        if (t.fotos) {
+          t.fotos.forEach(foto => {
+            if (!foto.desc && !foto.descripcion_foto) {
+              console.warn('⚠️ Foto sin descripción:', foto.localId || foto.id_foto);
+              foto.desc = ''; // Asegurar que no sea undefined
+              foto.descripcion_foto = '';
+            } else if (foto.desc && !foto.descripcion_foto) {
+              foto.descripcion_foto = foto.desc;
+            }
+          });
+        }
+      }
+      
+      let errores = [];
+      for (const t of trabajosState) {
+        if(!t.id) t.id = uid();
+        const pending = (t.fotos||[]).filter(p=>p.__local && p.__blob);
+        for (const p of pending) {
+          try {
+            // Log básico de subida
+            console.log('📝 Subiendo foto:', p.localId || p.id_foto);
+            await uploadOnePhoto(p, t.id); // muta p con url e id
+          } catch (e) {
+            errores.push({trabajo: t.id, foto: p.localId, error: e.message});
+          }
+        }
+      }
+      if (errores.length) {
+        console.error('❌ Errores al subir fotos:', errores);
+        throw new Error('No se pudieron subir todas las fotos. Intenta de nuevo.');
+      }
+    }
+
+    // Construye payload final sin campos internos (__blob, __local)
+    function buildPayloadFinal(informeId){
+      const informe = buildInformeObj(informeId);
+      const trabajos = trabajosState.map(t => ({
+        ...t,
+        id: t.id || uid(),
+        id_informe: informeId,
+        fotos: (t.fotos||[])
+          .filter(p => p.url || p.__local) // Solo incluir fotos con URL o pendientes
+          .map(p => {
+            const description = p.descripcion_foto || p.desc || '';
+            console.log('📋 Mapping photo to payload:', p.id_foto || p.id);
+            return {
+              id: p.id_foto || p.id || uid(),
+              id_trabajo: t.id,
+              descripcion_foto: description,
+              url: p.url || null,
+              estado: p.url ? 'activo' : 'pendiente'
+            };
+          })
+      }));
+      
+      console.log('Payload final:', JSON.stringify({informe, trabajos}, null, 2));
+      return { informe, trabajos };
+    }
+
+    // Un solo botón: crea o actualiza (sube fotos primero)
     async function guardar(){
       if(!validateInforme()) return;
 
       const isUpdate = !!currentId;
       const preId = currentId || uid();
 
-      const payload = readForm();
-      payload.informe.id = preId;
-      payload.trabajos = payload.trabajos.map(t => ({ ...t, id_informe: preId }));
+      console.log(`🔄 Iniciando guardado de informe (${isUpdate ? 'actualización' : 'nuevo'}):`, preId);
 
-      const action = isUpdate ? 'update_informe' : 'create_informe';
-      await dataApi({ action, ...(isUpdate? {id:preId}:{}) , data: payload });
+      // Bloqueo básico UI
+      $('#btnGuardar').disabled = true;
 
-      currentId = preId;
-      mirrorLocal(payload);
-      $('#btnEliminar').disabled = !currentId;
-      await recargarInformes();
-      toast(isUpdate? 'Actualizado':'Guardado','ok');
+      try{
+        // 1) Sincronizar descripciones ANTES de subir fotos
+        syncAllPhotoDescriptions();
+
+        // 2) Subir fotos pendientes (si online)
+        console.log('🔍 Estado de trabajos antes de subir fotos:', trabajosState.map(t => ({
+          id: t.id,
+          fotos: (t.fotos || []).map(f => ({
+            localId: f.localId,
+            __local: f.__local,
+            hasBlob: !!f.__blob,
+            hasUrl: !!f.url,
+            desc: f.desc || '(empty)'
+          }))
+        })));
+        
+        const totalPend = trabajosState.reduce((n,t)=>n + (t.fotos||[]).filter(p=>p.__local && p.__blob).length, 0);
+        const totalPhotos = trabajosState.reduce((n,t)=>n + (t.fotos||[]).length, 0);
+        
+        console.log(`📸 Fotos pendientes: ${totalPend}, Total fotos: ${totalPhotos}`);
+        
+        if (totalPend > 0 && navigator.onLine) {
+          toast(`Subiendo ${totalPend} foto(s)...`);
+          console.log('📤 Iniciando subida de fotos...');
+          await uploadPendingPhotos(preId);
+          console.log('✅ Fotos subidas completamente');
+        }
+
+        // Validar que todas las fotos tengan URL antes de guardar
+        const fotosSinUrl = trabajosState.flatMap(t => (t.fotos||[]).filter(p => !p.url));
+        if (fotosSinUrl.length > 0) {
+          console.error('❌ Hay fotos sin URL después de subir:', fotosSinUrl);
+          toast('Error: Hay fotos que no se subieron correctamente. Intenta de nuevo.','danger');
+          $('#btnGuardar').disabled = false;
+          return;
+        }
+
+        // 2) Construir payload final y enviar a Sheets
+        console.log('📝 Construyendo payload final...');
+        const payload = buildPayloadFinal(preId);
+        const action = isUpdate ? 'update_informe' : 'create_informe';
+        
+        console.log(`🌐 Enviando a n8n (${action}):`, ENDPOINT_DATA);
+        const response = await dataApi({ action, ...(isUpdate? {id:preId}:{}), data: payload });
+        console.log('📥 Respuesta de n8n:', response);
+
+        currentId = preId;
+        mirrorLocal(payload);
+        $('#btnEliminar').disabled = !currentId;
+        await recargarInformes();
+        
+        console.log('✅ Informe guardado exitosamente');
+        toast(isUpdate? 'Actualizado':'Guardado','ok');
+      }catch(e){
+        console.error('❌ Error al guardar informe:', e);
+        toast('Error al guardar: ' + e.message,'danger');
+      }finally{
+        $('#btnGuardar').disabled = false;
+      }
     }
 
     async function eliminar(){
@@ -772,13 +1086,46 @@ self.addEventListener('fetch', e=>{
       navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
     }
 
+    /* ===== Testing Functions ===== */
+    async function testEndpoints(){
+      console.log('🧪 Testing endpoints...');
+      
+      // Test 1: Endpoint DATA
+      try {
+        const testRes1 = await fetch(ENDPOINT_DATA, {method: 'OPTIONS'});
+        console.log('✅ ENDPOINT_DATA accessible:', ENDPOINT_DATA, testRes1.status);
+      } catch(e) {
+        console.error('❌ ENDPOINT_DATA error:', e.message);
+      }
+      
+      // Test 2: Endpoint UPLOAD
+      try {
+        const testRes2 = await fetch(ENDPOINT_UPLOAD, {method: 'OPTIONS'});
+        console.log('✅ ENDPOINT_UPLOAD accessible:', ENDPOINT_UPLOAD, testRes2.status);
+      } catch(e) {
+        console.error('❌ ENDPOINT_UPLOAD error:', e.message);
+      }
+      
+      // Test 3: Endpoint CATALOGS
+      try {
+        const testRes3 = await fetch(ENDPOINT_CATALOGS, {method: 'GET'});
+        console.log('✅ ENDPOINT_CATALOGS accessible:', ENDPOINT_CATALOGS, testRes3.status);
+      } catch(e) {
+        console.error('❌ ENDPOINT_CATALOGS error:', e.message);
+      }
+    }
+    
+    // Ejecutar test en consola: testEndpoints()
+    window.testEndpoints = testEndpoints;
+
     /* ===== Eventos UI ===== */
     $('#btnAddTrabajo').addEventListener('click', ()=> openTrabajoModal('add'));
     $('#btnCloseModal').addEventListener('click', closeTrabajoModal);
     $('#btnModalCancel').addEventListener('click', closeTrabajoModal);
 
-    // Guardar trabajo con validación
+    // Guardar trabajo con validación (sin subir nada aquí)
     $('#btnModalSave').addEventListener('click', ()=>{
+      syncPhotoDescriptions();
       if(!validateTrabajoModal()) return;
       const t=readTrabajoFromModal();
       if(modalMode==='add') addTrabajo(t); else updateTrabajo(modalIndex, t);
@@ -805,10 +1152,24 @@ self.addEventListener('fetch', e=>{
       markInvalid($('#m_actividad'), !$('#m_actividad').value);
     });
 
+    // Input de fotos (solo prepara previews y estado local)
+    $('#m_fotos_input').addEventListener('change', (e)=>{
+      const files = Array.from(e.target.files||[]);
+      if(!files.length) return;
+      handleFilesSelected(files).catch(err=>{
+        console.error(err);
+        toast('No se pudieron preparar las fotos','danger');
+      });
+      e.target.value = ''; // reset
+    });
+
     // Otros botones
     $('#btnLimpiarTrabajos').addEventListener('click', ()=> limpiarTrabajos());
     $('#btnNuevo').addEventListener('click', nuevo);
-    $('#btnGuardar').addEventListener('click', ()=> guardar().catch(e=>{console.error(e); toast('Error al guardar','danger')}));
+    $('#btnGuardar').addEventListener('click', ()=> {
+      syncPhotoDescriptions();
+      guardar().catch(e=>{console.error(e); toast('Error al guardar','danger')});
+    });
     $('#btnEliminar').addEventListener('click', ()=> eliminar().catch(e=>{console.error(e); toast('Error al eliminar','danger')}));
     $('#btnSync').addEventListener('click', ()=> trySync().catch(e=>{console.error(e); toast('Error al sincronizar','danger')}));
     $('#btnRefreshCatalogs').addEventListener('click', ()=> refreshCatalogs().catch(e=>{console.error(e); toast('Error listas','danger')}));
@@ -865,7 +1226,6 @@ self.addEventListener('fetch', e=>{
         _deferredPrompt = null;
       }
     });
-
   </script>
 </body>
 </html>
