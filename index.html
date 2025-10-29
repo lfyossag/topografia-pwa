@@ -109,6 +109,7 @@
         <button class="btn-ghost" id="btnNuevo">Nuevo</button>
         <button class="btn" id="btnGuardar">Guardar</button>
         <button class="btn-err" id="btnEliminar" disabled>Eliminar</button>
+        <button class="btn-ghost" id="btnGenerarPDF" disabled>Generar Informe</button>
       </div>
 
       <div class="sep"></div>
@@ -176,6 +177,7 @@
           <thead>
             <tr>
               <th class="num">No.</th>
+              <th>Contratista</th>
               <th>Lote de trabajo</th>
               <th>Frente específico</th>
               <th>Plano de construcción</th>
@@ -209,6 +211,15 @@
           <label><input type="checkbox" id="chk_elevacion"> Elevación</label>
         </div>
         <div class="row cols-2">
+          <div>
+            <label>Contratista *</label>
+            <select id="m_contratista">
+              <option value="">Seleccione contratista</option>
+              <option value="Estyma">Estyma</option>
+              <option value="CYS">CYS</option>
+              <option value="Provias">Provias</option>
+            </select>
+          </div>
           <div>
             <label>Lote de trabajo</label>
             <select id="m_lote_control_id"></select>
@@ -351,7 +362,7 @@
 
     function validateTrabajoModal(){
       let ok=true;
-      const reqBase = [$('#m_lote_control_id'),$('#m_lote_trabajo_id'),$('#m_actividad'),$('#m_descripcion_actividad')];
+      const reqBase = [$('#m_contratista'),$('#m_lote_control_id'),$('#m_lote_trabajo_id'),$('#m_actividad'),$('#m_descripcion_actividad')];
       for(const el of reqBase){ const invalid = !el.value || (el.tagName==='INPUT' && !el.value.trim()); markInvalid(el, invalid); if(invalid) ok=false; }
 
       if($('#chk_abscisa').checked){
@@ -557,6 +568,7 @@
       trabajosState.forEach((t,i)=>{
         const tr=document.createElement('tr'); tr.dataset.id=t.id;
         tr.innerHTML=`<td class="num"><span class="rownum">${i+1}</span></td>
+          <td>${t.contratista||''}</td>
           <td>${t.lote_trabajo||''}</td>
           <td>${t.frente_especifico||''}</td>
           <td>${t.plano_construccion||''}</td>
@@ -767,6 +779,9 @@
       if (!data.id) data.id = uid();
       $('#modalTitle').dataset.tid = data.id;
 
+      // Contratista
+      $('#m_contratista').value = data.contratista || '';
+
       // Lotes
       optionize($('#m_lote_control_id'), catalogos.lotes_control||[], 'id', 'nombre', {placeholder:'Seleccione lote'});
       const preCtrlId = data.lote_control_id || (catalogos.lotes_control||[]).find(lc => lc.nombre === data.lote_trabajo)?.id || '';
@@ -819,6 +834,7 @@
       __modalPhotos.forEach(f => { f.descripcion_foto = f.desc; });
       return {
         id: $('#modalTitle').dataset.tid || uid(),
+        contratista: $('#m_contratista').value || '',
         lote_control_id: ctrlId, lote_trabajo_id: trabId,
         lote_trabajo: ctrlName, frente_especifico: trabName,
         plano_construccion: $('#m_plano_construccion').value.trim(),
@@ -868,6 +884,13 @@
     }
 
     function buildInformeObj(informeId){
+      // Obtener valores de texto en lugar de IDs
+      const equipoId = $('#equipo_trabajo_id').value;
+      const topografoId = $('#topografo_id').value;
+      
+      const equipoText = equipoId ? findById(catalogos.equipos, equipoId)?.codigo_equipo || equipoId : null;
+      const topografoText = topografoId ? findById(catalogos.personas, topografoId)?.nombre || topografoId : null;
+      
       return {
         id: informeId,
         fecha_creacion: new Date().toISOString(),
@@ -875,8 +898,8 @@
         jornada: $('#jornada').value,
         frente: $('#frente').value,
         clima: $('#clima').value,
-        equipo_trabajo_id: $('#equipo_trabajo_id').value || null,
-        topografo_id: $('#topografo_id').value || null,
+        equipo_trabajo_id: equipoText,
+        topografo_id: topografoText,
         observaciones: ''
       };
     }
@@ -887,11 +910,20 @@
       $('#jornada').value=rec?.jornada||'diurno';
       $('#frente').value=rec?.frente||'Obras Principales';
       $('#clima').value=rec?.clima||'Seco';
-      $('#equipo_trabajo_id').value=rec?.equipo_trabajo_id||'';
-      $('#topografo_id').value=rec?.topografo_id||'';
+      
+      // Buscar IDs basándose en los valores de texto guardados
+      const equipoId = rec?.equipo_trabajo_id ? 
+        (catalogos.equipos||[]).find(e => e.codigo_equipo === rec.equipo_trabajo_id)?.id || rec.equipo_trabajo_id : '';
+      const topografoId = rec?.topografo_id ? 
+        (catalogos.personas||[]).find(p => p.nombre === rec.topografo_id)?.id || rec.topografo_id : '';
+      
+      $('#equipo_trabajo_id').value = equipoId;
+      $('#topografo_id').value = topografoId;
+      
       trabajosState=(rec?.trabajos||[]).map(x=> ({ id: x.id||uid(), ...x }));
       renderTrabajos();
       $('#btnEliminar').disabled=!currentId;
+      $('#btnGenerarPDF').disabled=!currentId;
     }
 
     async function refreshCatalogs(){
@@ -1043,6 +1075,7 @@
         currentId = preId;
         mirrorLocal(payload);
         $('#btnEliminar').disabled = !currentId;
+        $('#btnGenerarPDF').disabled = !currentId;
         await recargarInformes();
         
         console.log('✅ Informe guardado exitosamente');
@@ -1063,7 +1096,59 @@
       await recargarInformes();
       toast('Eliminado','danger');
     }
-    function nuevo(){ currentId=null; fillForm({trabajos:[]}); $('#selInforme').value=''; }
+
+    async function generarPDF(){
+      if(!currentId) return;
+      
+      $('#btnGenerarPDF').disabled = true;
+      $('#btnGenerarPDF').textContent = 'Generando...';
+      
+      try {
+        toast('Generando informe PDF...', 'info');
+        
+        const response = await fetch('https://luisyg.app.n8n.cloud/webhook/crear-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id_informe: currentId
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('📄 Respuesta del endpoint PDF:', result);
+        
+        // La respuesta es un array, tomar el primer elemento
+        const pdfData = Array.isArray(result) ? result[0] : result;
+        
+        if (pdfData && pdfData.ok && pdfData.pdfUrl) {
+          toast(`PDF generado: ${pdfData.pdfFileName || 'Informe.pdf'}`, 'ok');
+          console.log(`📄 PDF creado - Filas: ${pdfData.rowsCreated}, Archivo: ${pdfData.pdfFileName}`);
+          
+          // Abrir PDF en nueva ventana
+          window.open(pdfData.pdfUrl, '_blank');
+        } else {
+          throw new Error(pdfData?.message || 'Error al generar PDF - Respuesta inválida');
+        }
+      } catch (error) {
+        console.error('❌ Error generando PDF:', error);
+        toast('Error al generar PDF: ' + error.message, 'danger');
+      } finally {
+        $('#btnGenerarPDF').disabled = false;
+        $('#btnGenerarPDF').textContent = 'Generar Informe';
+      }
+    }
+
+    function nuevo(){ 
+      currentId=null; 
+      fillForm({trabajos:[]}); 
+      $('#selInforme').value=''; 
+      $('#btnEliminar').disabled = true;
+      $('#btnGenerarPDF').disabled = true;
+    }
 
     function updateConnStatus(){
       const txt=(navigator.onLine ? ((ENDPOINT_DATA||ENDPOINT_CATALOGS)? 'Online (endpoint)': 'Offline (sin endpoint)') : 'Offline');
@@ -1132,6 +1217,11 @@ self.addEventListener('fetch', e=>{
       closeTrabajoModal();
     });
 
+    // Validación de campos obligatorios
+    $('#m_contratista').addEventListener('change', ()=>{
+      markInvalid($('#m_contratista'), !$('#m_contratista').value);
+    });
+    
     // Dependencia Lote Control -> Lote Trabajo
     $('#m_lote_control_id').addEventListener('change', ()=>{
       markInvalid($('#m_lote_control_id'), !$('#m_lote_control_id').value);
@@ -1171,6 +1261,7 @@ self.addEventListener('fetch', e=>{
       guardar().catch(e=>{console.error(e); toast('Error al guardar','danger')});
     });
     $('#btnEliminar').addEventListener('click', ()=> eliminar().catch(e=>{console.error(e); toast('Error al eliminar','danger')}));
+    $('#btnGenerarPDF').addEventListener('click', ()=> generarPDF().catch(e=>{console.error(e); toast('Error al generar PDF','danger')}));
     $('#btnSync').addEventListener('click', ()=> trySync().catch(e=>{console.error(e); toast('Error al sincronizar','danger')}));
     $('#btnRefreshCatalogs').addEventListener('click', ()=> refreshCatalogs().catch(e=>{console.error(e); toast('Error listas','danger')}));
 
