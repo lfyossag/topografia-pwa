@@ -36,8 +36,9 @@
     @media (max-width:720px){ .row.cols-2{grid-template-columns:1fr} }
 
     label{font-size:12px;color:var(--muted)}
-    input, select{width:100%; padding:10px 12px; border:1px solid var(--bd2); border-radius:10px; background:#fff; outline:none; font-size:14px}
-    input.invalid, select.invalid{border-color:var(--err)}
+    input, select, textarea{width:100%; padding:10px 12px; border:1px solid var(--bd2); border-radius:10px; background:#fff; outline:none; font-size:14px}
+    input.invalid, select.invalid, textarea.invalid{border-color:var(--err)}
+    textarea{resize:vertical; font-family:inherit; min-height:60px;}
 
     .sep{height:1px; background:var(--bd); margin:12px 0}
 
@@ -46,8 +47,16 @@
     th, td{border-bottom:1px solid var(--bd); padding:8px 10px; text-align:left; vertical-align:top; font-size:14px}
     th{position:sticky; top:0; background:var(--soft); z-index:1; font-size:12px; color:var(--muted); border-bottom:1px solid var(--bd2)}
     .num{width:56px}
-    .fit{width:1%; white-space:nowrap}
-    .actions-row{display:flex; gap:8px}
+    .fit{width:80px; white-space:nowrap}
+    .coord-col{width:180px; min-width:160px}
+    .actions-row{display:flex; gap:4px; justify-content:center; align-items:center}
+    .btn-icon{width:30px; height:30px; padding:0; border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid var(--bd2); background:#fff; transition:all 0.2s; position:relative}
+    .btn-icon:hover{transform:translateY(-1px); box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+    .btn-icon.edit{color:#3b82f6}
+    .btn-icon.edit:hover{background:#eff6ff; border-color:#3b82f6}
+    .btn-icon.delete{color:#ef4444}
+    .btn-icon.delete:hover{background:#fef2f2; border-color:#ef4444}
+    .btn-icon svg{width:14px; height:14px; fill:currentColor}
 
     .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:14px; background:#111827; color:#fff; padding:10px 12px; border-radius:8px; box-shadow:var(--shadow); display:none}
     .danger{background:#b91c1c}
@@ -112,23 +121,37 @@
         <button class="btn-ghost" id="btnGenerarPDF" disabled>Generar Informe</button>
       </div>
 
+      <!-- ENLACE AL PDF GENERADO -->
+      <div id="pdfLinkContainer" class="card" style="display: none; margin-top: 12px; padding: 12px; background: #f0f9ff; border-left: 4px solid var(--pri);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: bold; color: var(--pri);">📄 Informe PDF generado:</span>
+          <a id="pdfLink" href="#" target="_blank" style="color: var(--pri); text-decoration: none; font-weight: 500;">Ver PDF</a>
+          <button id="btnClosePdfLink" class="btn-ghost" style="margin-left: auto; padding: 4px 8px; font-size: 12px;">✕</button>
+        </div>
+      </div>
+
       <div class="sep"></div>
+
+      <!-- MENSAJE CAMPOS OBLIGATORIOS -->
+      <div style="margin-bottom: 12px; padding: 8px; background: #fefce8; border: 1px solid #facc15; border-radius: 8px; font-size: 12px; color: #713f12;">
+        <strong>Nota:</strong> Los campos marcados con <span style="color: #dc2626;">*</span> son obligatorios
+      </div>
 
       <!-- FORM PRINCIPAL (2 columnas) -->
       <div class="row cols-2">
         <div>
-          <label>Fecha del informe</label>
+          <label>Fecha del informe <span style="color: #dc2626;">*</span></label>
           <input type="date" id="fecha_informe" />
         </div>
         <div>
-          <label>Jornada</label>
+          <label>Jornada <span style="color: #dc2626;">*</span></label>
           <select id="jornada">
             <option value="diurno">Diurna</option>
             <option value="nocturno">Nocturna</option>
           </select>
         </div>
         <div>
-          <label>Frente general de trabajo</label>
+          <label>Frente general de trabajo <span style="color: #dc2626;">*</span></label>
           <select id="frente">
             <option value="Obras Principales">Obras Principales</option>
             <option value="Mantenimiento vial">Mantenimiento vial</option>
@@ -145,11 +168,11 @@
 
       <div class="row cols-2" style="margin-top:10px">
         <div>
-          <label>Serial equipo de trabajo</label>
+          <label>Serial equipo de trabajo <span style="color: #dc2626;">*</span></label>
           <select id="equipo_trabajo_id"></select>
         </div>
         <div>
-          <label>Topógrafo</label>
+          <label>Topógrafo <span style="color: #dc2626;">*</span></label>
           <select id="topografo_id"></select>
         </div>
       </div>
@@ -181,10 +204,10 @@
               <th>Lote de trabajo</th>
               <th>Frente específico</th>
               <th>Plano de construcción</th>
-              <th>Abscisa Inicial / Final</th>
-              <th>Ordenada Inicial / Final</th>
-              <th>Elevación Inicial / Final</th>
-              <th>Actividad</th>
+              <th class="coord-col">Abscisa Inicial / Final</th>
+              <th class="coord-col">Ordenada Inicial / Final</th>
+              <th class="coord-col">Elevación Inicial / Final</th>
+              <th style="width:120px;">Actividad</th>
               <th>Descripción</th>
               <th class="fit">Acciones</th>
             </tr>
@@ -212,7 +235,7 @@
         </div>
         <div class="row cols-2">
           <div>
-            <label>Contratista *</label>
+            <label>Contratista <span style="color: #dc2626;">*</span></label>
             <select id="m_contratista">
               <option value="">Seleccione contratista</option>
               <option value="Estyma">Estyma</option>
@@ -221,11 +244,11 @@
             </select>
           </div>
           <div>
-            <label>Lote de trabajo</label>
+            <label>Lote de trabajo <span style="color: #dc2626;">*</span></label>
             <select id="m_lote_control_id"></select>
           </div>
           <div>
-            <label>Frente específico</label>
+            <label>Frente específico <span style="color: #dc2626;">*</span></label>
             <select id="m_lote_trabajo_id"></select>
           </div>
           <div>
@@ -261,7 +284,7 @@
           </div>
 
           <div>
-            <label>Actividad</label>
+            <label>Actividad <span style="color: #dc2626;">*</span></label>
             <select id="m_actividad">
               <option value="">Seleccione</option>
               <option value="liberacion">Liberación</option>
@@ -269,9 +292,9 @@
               <option value="levantamiento">Levantamiento</option>
             </select>
           </div>
-          <div>
-            <label>Descripción</label>
-            <input id="m_descripcion_actividad">
+          <div style="grid-column:1/-1">
+            <label>Descripción <span style="color: #dc2626;">*</span></label>
+            <textarea id="m_descripcion_actividad" rows="3" style="width:100%; padding:10px 12px; border:1px solid var(--bd2); border-radius:10px; background:#fff; outline:none; font-size:14px; resize:vertical; font-family:inherit;"></textarea>
           </div>
           <div>
             <label>Estado actividad</label>
@@ -281,8 +304,8 @@
           <!-- ===== FOTOS ===== -->
           <div style="grid-column:1/-1">
             <div class="photo-row">
-              <label>Fotos (mínimo 2)</label>
-              <input type="file" id="m_fotos_input" accept="image/*" multiple capture="environment" style="margin-left:auto">
+              <label>Fotos (opcionales)</label>
+              <input type="file" id="m_fotos_input" accept="image/*" multiple style="margin-left:auto">
             </div>
             <div id="m_fotos_list" class="photos-grid" style="margin-top:8px"></div>
           </div>
@@ -314,6 +337,33 @@
     const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
     const KEY = (k)=>`topografia_${k}`;
     const db = { get:(k,d)=>{try{return JSON.parse(localStorage.getItem(KEY(k))||JSON.stringify(d));}catch{return d}}, set:(k,v)=>localStorage.setItem(KEY(k), JSON.stringify(v)), del:(k)=>localStorage.removeItem(KEY(k)) };
+
+    // Funciones de formateo para coordenadas
+    const formatAbscisa = (value) => {
+      if (!value && value !== 0) return '';
+      const num = Number(value);
+      if (!Number.isFinite(num)) return value;
+      
+      // Formato K1+456 cuando supera 1000, K0+678 cuando no
+      if (num >= 1000) {
+        const km = Math.floor(num / 1000);
+        const metros = num % 1000;
+        return `Abs K${km}+${metros.toString().padStart(3, '0')}`;
+      } else {
+        // Formato K0+XXX para números menores a 1000
+        return `Abs K0+${num.toString().padStart(3, '0')}`;
+      }
+    };
+    
+    const formatOrdenada = (value) => {
+      if (!value && value !== 0) return '';
+      return `Ord ${value}`;
+    };
+    
+    const formatElevacion = (value) => {
+      if (!value && value !== 0) return '';
+      return `Elv ${value}`;
+    };
 
     // Convierte link de Drive "view" a link embebible (uc?export=view)
     function drivePreview(url){
@@ -363,7 +413,7 @@
     function validateTrabajoModal(){
       let ok=true;
       const reqBase = [$('#m_contratista'),$('#m_lote_control_id'),$('#m_lote_trabajo_id'),$('#m_actividad'),$('#m_descripcion_actividad')];
-      for(const el of reqBase){ const invalid = !el.value || (el.tagName==='INPUT' && !el.value.trim()); markInvalid(el, invalid); if(invalid) ok=false; }
+      for(const el of reqBase){ const invalid = !el.value || ((el.tagName==='INPUT' || el.tagName==='TEXTAREA') && !el.value.trim()); markInvalid(el, invalid); if(invalid) ok=false; }
 
       if($('#chk_abscisa').checked){
         const a1=$('#m_abscisa_inicial'), a2=$('#m_abscisa_final');
@@ -381,8 +431,8 @@
         markInvalid(e1, ie1); markInvalid(e2, ie2); if(ie1||ie2) ok=false;
       }
 
-      // mínimo 2 fotos contando locales + subidas
-      if (countPhotos(__modalPhotos) < 2){ toast('Debes adjuntar al menos 2 fotos','danger'); ok=false; }
+      // Las fotos ahora son opcionales - comentamos la validación
+      // if (countPhotos(__modalPhotos) < 2){ toast('Debes adjuntar al menos 2 fotos','danger'); ok=false; }
 
       if(!ok) toast('Revisa los campos obligatorios del trabajo','danger');
       return ok;
@@ -562,6 +612,13 @@
 
     /* ===== Helpers UI ===== */
     function fmtPair(a,b){ const x=a??''; const y=b??''; return `${x}${(x!==''||y!=='')?' / ':''}${y}`; }
+    
+    // Función especializada para formatear pares de coordenadas con prefijos
+    function fmtCoordPair(inicial, final, formatter) {
+      const x = inicial != null ? formatter(inicial) : '';
+      const y = final != null ? formatter(final) : '';
+      return `${x}${(x !== '' || y !== '') ? ' / ' : ''}${y}`;
+    }
 
     function renderTrabajos(){
       const body=$('#bodyTrabajos'); body.innerHTML='';
@@ -572,19 +629,27 @@
           <td>${t.lote_trabajo||''}</td>
           <td>${t.frente_especifico||''}</td>
           <td>${t.plano_construccion||''}</td>
-          <td>${fmtPair(t.abscisa_inicial,t.abscisa_final)}</td>
-          <td>${fmtPair(t.ordenada_inicial,t.ordenada_final)}</td>
-          <td>${fmtPair(t.elevacion_inicial,t.elevacion_final)}</td>
+          <td class="coord-col">${fmtCoordPair(t.abscisa_inicial,t.abscisa_final,formatAbscisa)}</td>
+          <td class="coord-col">${fmtCoordPair(t.ordenada_inicial,t.ordenada_final,formatOrdenada)}</td>
+          <td class="coord-col">${fmtCoordPair(t.elevacion_inicial,t.elevacion_final,formatElevacion)}</td>
           <td>${t.actividad||''}</td>
           <td>${t.descripcion_actividad||''}</td>
           <td class="fit">
             <div class="actions-row">
-              <button class="btn-ghost">Editar</button>
-              <button class="btn-err">Eliminar</button>
+              <button class="btn-icon edit" title="Editar trabajo">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                </svg>
+              </button>
+              <button class="btn-icon delete" title="Eliminar trabajo">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                </svg>
+              </button>
             </div>
           </td>`;
-        tr.querySelector('.btn-ghost').addEventListener('click',()=>openTrabajoModal('edit',i,t));
-        tr.querySelector('.btn-err').addEventListener('click',()=>deleteTrabajoById(t.id));
+        tr.querySelector('.btn-icon.edit').addEventListener('click',()=>openTrabajoModal('edit',i,t));
+        tr.querySelector('.btn-icon.delete').addEventListener('click',()=>deleteTrabajoById(t.id));
         body.appendChild(tr);
       });
     }
@@ -818,7 +883,7 @@
       renderModalPhotos();
 
       // limpiar errores previos
-      $$('#modalBack input, #modalBack select').forEach(el => markInvalid(el,false));
+      $$('#modalBack input, #modalBack select, #modalBack textarea').forEach(el => markInvalid(el,false));
 
       $('#modalBack').style.display='flex'; document.body.classList.add('modal-open');
     }
@@ -945,8 +1010,20 @@
       updateConnStatus();
     }
     async function recargarInformes(){
-      const out=await localApi({action:'list_informes'});
-      renderSelInforme(out.informes||[]);
+      try {
+        // Usar siempre localApi para obtener datos frescos del localStorage
+        const out = await localApi({action:'list_informes'});
+        renderSelInforme(out.informes||[]);
+        
+        // Limpiar la selección actual si el informe ya no existe
+        const currentSelection = $('#selInforme').value;
+        if (currentSelection && !out.informes.find(inf => inf.id === currentSelection)) {
+          $('#selInforme').value = '';
+        }
+      } catch (error) {
+        console.error('Error recargando informes:', error);
+        toast('Error al recargar lista de informes','danger');
+      }
     }
 
     // Subida diferida: recorre todos los trabajos y sube fotos locales
@@ -1091,10 +1168,30 @@
     async function eliminar(){
       if(!currentId) return;
       if(!confirm('¿Eliminar el informe actual?')) return;
-      await dataApi({action:'delete_informe', id:currentId});
-      currentId=null; nuevo();
-      await recargarInformes();
-      toast('Eliminado','danger');
+      
+      const informeIdAEliminar = currentId;
+      
+      try {
+        await dataApi({action:'delete_informe', id: informeIdAEliminar});
+        
+        // Forzar eliminación local también
+        const informes = db.get('informes',[]);
+        const informesActualizados = informes.filter(x => x.id != informeIdAEliminar);
+        db.set('informes', informesActualizados);
+        db.del(`informe_${informeIdAEliminar}`);
+        
+        // Limpiar estado local
+        currentId = null; 
+        nuevo();
+        
+        // Recargar la lista de informes para reflejar el cambio
+        await recargarInformes();
+        
+        toast('Informe eliminado correctamente','ok');
+      } catch (error) {
+        console.error('Error al eliminar informe:', error);
+        toast('Error al eliminar informe: ' + error.message,'danger');
+      }
     }
 
     async function generarPDF(){
@@ -1128,8 +1225,12 @@
           toast(`PDF generado: ${pdfData.pdfFileName || 'Informe.pdf'}`, 'ok');
           console.log(`📄 PDF creado - Filas: ${pdfData.rowsCreated}, Archivo: ${pdfData.pdfFileName}`);
           
-          // Abrir PDF en nueva ventana
-          window.open(pdfData.pdfUrl, '_blank');
+          // Mostrar enlace al PDF en lugar de abrir ventana
+          const pdfLink = document.getElementById('pdfLink');
+          const pdfContainer = document.getElementById('pdfLinkContainer');
+          pdfLink.href = pdfData.pdfUrl;
+          pdfLink.textContent = pdfData.pdfFileName || 'Informe.pdf';
+          pdfContainer.style.display = 'block';
         } else {
           throw new Error(pdfData?.message || 'Error al generar PDF - Respuesta inválida');
         }
@@ -1148,6 +1249,7 @@
       $('#selInforme').value=''; 
       $('#btnEliminar').disabled = true;
       $('#btnGenerarPDF').disabled = true;
+      $('#pdfLinkContainer').style.display = 'none';
     }
 
     function updateConnStatus(){
@@ -1264,6 +1366,11 @@ self.addEventListener('fetch', e=>{
     $('#btnGenerarPDF').addEventListener('click', ()=> generarPDF().catch(e=>{console.error(e); toast('Error al generar PDF','danger')}));
     $('#btnSync').addEventListener('click', ()=> trySync().catch(e=>{console.error(e); toast('Error al sincronizar','danger')}));
     $('#btnRefreshCatalogs').addEventListener('click', ()=> refreshCatalogs().catch(e=>{console.error(e); toast('Error listas','danger')}));
+
+    // Cerrar contenedor de enlace PDF
+    $('#btnClosePdfLink').addEventListener('click', ()=> {
+      $('#pdfLinkContainer').style.display = 'none';
+    });
 
     $('#selInforme').addEventListener('change', async (e)=>{
       const id=e.target.value;
